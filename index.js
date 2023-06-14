@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const fs = require("fs");
 const morgan = require("morgan");
 const axios = require("axios");
+const { spawn } = require("child_process");
 const { performance } = require("perf_hooks");
 const { SocksProxyAgent } = require("socks-proxy-agent");
 const tencentcloud = require("tencentcloud-sdk-nodejs");
@@ -26,16 +27,34 @@ const config = new ConfigParser();
 config.read("config.conf");
 const prefix = config.get("api", "prefix");
 const appPort = config.get("api", "port");
+const civoRouter = require("./routers/civo");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //clearup runningprocess.txt file
 fs.writeFile("runningprocess.txt", "", function (err) {
   if (err) throw err;
 });
 
-app.listen(appPort, "0.0.0.0", () => {
-  console.log(`Listening on port ${appPort}`);
-});
-
+function startSessionLoop() {
+  sessionLoop = spawn("node", ["loop.js"]);
+  sessionLoop.on("error", (error) => {
+    console.error(`Session loop error: ${error.message}`);
+  });
+  sessionLoop.stdout.pipe(process.stdout);
+  sessionLoop.on("exit", (code, signal) => {
+    //console.log(`Session loop exited with code ${code} and signal ${signal}`);
+    if (code !== 0 || code === 0) {
+      //console.log("Respawning session loop...");
+      startSessionLoop();
+    }
+  });
+}
+app.use(`/${prefix}/civo`, civoRouter);
+if (require.main === module) {
+  startSessionLoop();
+  app.listen(appPort, "0.0.0.0", () => {
+    console.log(`Listening on port ${appPort}`);
+  });
+}
 async function newIpAws(serverConfig) {
   const accessKey = serverConfig.accessKey;
   const secretKey = serverConfig.secretKey;
@@ -419,6 +438,7 @@ async function parseConfig() {
   config.read("config.conf");
   const confList = config.sections();
   let tencentConfigList = [];
+  let civoConfigList = [];
   let azureConfigList = [];
   let awsConfigList = [];
   let cloudflareConfig = {};
@@ -433,7 +453,10 @@ async function parseConfig() {
       const instanceId = config.get(confList[i], "instanceId");
       const socks5Port = config.get(confList[i], "socks5Port");
       const httpPort = config.get(confList[i], "httpPort");
-      tencentConfigList.push({
+      const socks5User = config.get(confList[i], "socks5User");
+      const socks5Pass = config.get(confList[i], "socks5Pass");
+
+      const configration = {
         configName: configName,
         secretId: secretId,
         secretKey: secretKey,
@@ -441,7 +464,12 @@ async function parseConfig() {
         instanceId: instanceId,
         socks5Port: socks5Port,
         httpPort: httpPort,
-      });
+      };
+      if (socks5User && socks5Pass) {
+        configration.socks5User = socks5User;
+        configration.socks5Pass = socks5Pass;
+      }
+      tencentConfigList.push(configration);
     } else if (configType == "cloudflare") {
       const email = config.get(confList[i], "email");
       const token = config.get(confList[i], "token");
@@ -476,8 +504,10 @@ async function parseConfig() {
       const ipConfigName = config.get(confList[i], "ipConfigName");
       const nicName = config.get(confList[i], "nicName");
       const vmName = config.get(confList[i], "vmName");
-      azureConfigList.push({
-        configName: configName,
+      const socks5User = config.get(confList[i], "socks5User");
+      const socks5Pass = config.get(confList[i], "socks5Pass");
+      const configuration = {
+        configName: confList[i],
         socks5Port: socks5Port,
         httpPort: httpPort,
         clientId: clientId,
@@ -489,7 +519,12 @@ async function parseConfig() {
         ipConfigName: ipConfigName,
         nicName: nicName,
         vmName: vmName,
-      });
+      };
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User;
+        configuration.socks5Pass = socks5Pass;
+      }
+      azureConfigList.push(configuration);
     } else if (configType == "aws") {
       const accessKey = config.get(confList[i], "accessKey");
       const secretKey = config.get(confList[i], "secretKey");
@@ -497,21 +532,50 @@ async function parseConfig() {
       const region = config.get(confList[i], "region");
       const socks5Port = config.get(confList[i], "socks5Port");
       const httpPort = config.get(confList[i], "httpPort");
-      awsConfigList.push({
-        configName: configName,
+      const socks5User = config.get(confList[i], "socks5User");
+      const socks5Pass = config.get(confList[i], "socks5Pass");
+      const configuration = {
+        configName: confList[i],
         accessKey: accessKey,
         secretKey: secretKey,
         instanceId: instanceId,
         region: region,
         socks5Port: socks5Port,
         httpPort: httpPort,
-      });
+      };
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User;
+        configuration.socks5Pass = socks5Pass;
+      }
+      awsConfigList.push(configuration);
+    } else if (configType == "civo") {
+      const token = config.get(confList[i], "token");
+      const cookie = config.get(confList[i], "cookie");
+      const instanceId = config.get(confList[i], "instanceId");
+      const socks5Port = config.get(confList[i], "socks5Port");
+      const httpPort = config.get(confList[i], "httpPort");
+      const socks5User = config.get(confList[i], "socks5User");
+      const socks5Pass = config.get(confList[i], "socks5Pass");
+      const configuration = {
+        configName: confList[i],
+        token: token,
+        cookie: cookie,
+        instanceId: instanceId,
+        socks5Port: socks5Port,
+        httpPort: httpPort,
+      };
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User;
+        configuration.socks5Pass = socks5Pass;
+      }
+      civoConfigList.push(configuration);
     }
   }
   return {
     configs: {
       api: apiConfig,
       cloudflare: cloudflareConfig,
+      civo: civoConfigList,
       tencent: tencentConfigList,
       azure: azureConfigList,
       aws: awsConfigList,
@@ -677,6 +741,17 @@ async function checkAzure(serverConfig) {
   return result;
 }
 
+async function refreshCreds(response, configName) {
+  const body = response.data;
+  const token = body.match(/<meta name="csrf-token" content="(.*)" \/>/)[1];
+  const cookie = response.headers["set-cookie"][0].split(";")[0].split("=")[1];
+  const lastCheck = new Date().toISOString();
+  config.set(configName, "cookie", cookie);
+  config.set(configName, "token", token);
+  config.set(configName, "lastCheck", lastCheck);
+  config.write("config.conf");
+}
+
 app.get(`/${prefix}/newip/`, async (req, res) => {
   const startTime = performance.now();
   let configName = req.query.configName;
@@ -790,6 +865,25 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
     const socks5Port = serverConfig.socks5Port;
     const httpPort = serverConfig.httpPort;
     const publicIp = result.newIp;
+    const socks5User = serverConfig.socks5User;
+    const socks5Pass = serverConfig.socks5Pass;
+    if (socks5User && socks5Pass) {
+      //generate auth_${configName}.json on /etc/shadowsocks
+      const auth = {
+        password: {
+          users: [
+            {
+              user_name: socks5User,
+              password: socks5Pass,
+            },
+          ],
+        },
+      };
+      fs.writeFileSync(
+        `/etc/shadowsocks/auth_${configName}.json`,
+        JSON.stringify(auth)
+      );
+    }
     //check if host exist on /etc/hosts, if yes delete the line cotaint host
     const hosts = fs.readFileSync("/etc/hosts", "utf8");
     const hostsArray = hosts.split("\n");
@@ -867,10 +961,16 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
     configTemplateJson.password = "Pass";
     configTemplateJson.method = "aes-128-gcm";
     configTemplateJson.mode = "tcp_and_udp";
-    configTemplateJson.local_address = hostLocalIp;
-    configTemplateJson.local_port = parseInt(socks5Port);
     configTemplateJson.locals[0].local_address = hostLocalIp;
-    configTemplateJson.locals[0].local_port = parseInt(httpPort);
+    configTemplateJson.locals[0].local_port = parseInt(socks5Port);
+    configTemplateJson.locals[0].protocol = "socks";
+
+    if (socks5User && socks5Pass) {
+      configTemplateJson.locals[0].socks5_auth_config_path = `/etc/shadowsocks/auth_${configName}.json`;
+    }
+    configTemplateJson.locals[1].protocol = "http";
+    configTemplateJson.locals[1].local_address = hostLocalIp;
+    configTemplateJson.locals[1].local_port = parseInt(httpPort);
     //check if directory /etc/shadowsocks/ exist, if not create one
     if (!fs.existsSync("/etc/shadowsocks")) {
       fs.mkdirSync("/etc/shadowsocks");
@@ -907,7 +1007,12 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
     for (retry = 0; retry < maxRetry; retry++) {
       try {
         //check socks5://localhost:socks5Port to fake.chiacloud.farm/ip using axios, if response.data == publicIp, break
-        const socks5Url = `socks5://${hostPublicIp}:${socks5Port}`;
+        let socks5Url;
+        if (socks5User && socks5Pass) {
+          socks5Url = `socks5://${socks5User}:${socks5Pass}@${hostPublicIp}:${socks5Port}`;
+        } else {
+          socks5Url = `socks5://${hostPublicIp}:${socks5Port}`;
+        }
         const agent = new SocksProxyAgent(socks5Url);
         console.log(`try to connect using ${socks5Url}`);
         const response = await axios.request({
@@ -937,8 +1042,14 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
     runningProcessArray.splice(runningProcessIndex, 1);
     const newRunningProcess = runningProcessArray.join("\n");
     fs.writeFileSync("runningprocess.txt", newRunningProcess);
+    let socks5Proxy;
+    if (socks5User && socks5Pass) {
+      socks5Proxy = `${socks5User}:${socks5Pass}@${apiHostName}:${socks5Port}`;
+    } else {
+      socks5Proxy = `${apiHostName}:${socks5Port}`;
+    }
     result.proxy = {
-      socks5: `${apiHostName}:${socks5Port}`,
+      socks5: socks5Proxy,
       http: `${apiHostName}:${httpPort}`,
       shadowsocks: `${host}:8388`,
     };
@@ -1013,3 +1124,6 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
     },
   });
 });
+
+exports.parseConfig = parseConfig;
+exports.refreshCreds = refreshCreds;

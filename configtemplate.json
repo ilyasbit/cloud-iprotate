@@ -3,10 +3,13 @@
   "server_port": 8388,
   "password": "Pass",
   "method": "aes-128-gcm",
-  "mode": "tcp_and_udp",
-  "local_address": "",
-  "local_port": null,
   "locals": [
+    {
+      "protocol": "socks",
+      "mode": "tcp_and_udp",
+      "local_address": "",
+      "local_port": null
+    },
     {
       "protocol": "http",
       "local_address": "",
