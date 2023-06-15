@@ -13,12 +13,11 @@ const { SocksProxyAgent } = require("socks-proxy-agent");
 const fromMain = require("../index.js");
 
 async function newIpCivo(serverConfig) {
-  async function createReservedIp(serverConfig) {
+  async function swithRegion(serverConfig) {
     const cookie = serverConfig.cookie;
-    const instanceId = serverConfig.instanceId;
-    const token = serverConfig.token;
-
-    const url = "https://dashboard.civo.com/reserved-ips";
+    const region = serverConfig.region;
+    const baseurl = `https://dashboard.civo.com/region/${region}?url=`;
+    const url = baseurl + encodeURIComponent("https://dashboard.civo.com/");
     const headers = {
       authority: "dashboard.civo.com",
       accept:
@@ -28,7 +27,6 @@ async function newIpCivo(serverConfig) {
       "content-type": "application/x-www-form-urlencoded",
       cookie: `_civo_session=${cookie}`,
       origin: "https://dashboard.civo.com",
-      referer: "https://dashboard.civo.com/reserved-ips/new",
       "sec-ch-ua":
         '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
       "sec-ch-ua-mobile": "?0",
@@ -41,21 +39,21 @@ async function newIpCivo(serverConfig) {
       "user-agent":
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
     };
-
-    const data = {
-      authenticity_token: token,
-      name: instanceId,
-      commit: "Create",
-    };
-
-    try {
-      const response = await axios.post(url, data, { headers });
-
-      return;
-    } catch (error) {
-      console.error(`error creating reserved ip`);
-    }
+    const result = await axios.get(url, { headers }).then((response) => {
+      let result = {};
+      const followUrl = response.request.res.responseUrl;
+      const body = response.data;
+      const token = body.match(/<meta name="csrf-token" content="(.*)" \/>/)[1];
+      const cookie = response.headers["set-cookie"][0]
+        .split(";")[0]
+        .split("=")[1];
+      result.token = token;
+      result.cookie = cookie;
+      return result;
+    });
+    return result;
   }
+
   async function getReservedIp(serverConfig) {
     const cookie = serverConfig.cookie;
     const instanceId = serverConfig.instanceId;
@@ -505,6 +503,7 @@ router.get("/newip", async function (req, res, next) {
         .status(400)
         .json({ success: false, message: "config not found" });
     }
+    await swithRegion(serverConfig);
     result = await newIpCivo(serverConfig);
     const socks5Port = serverConfig.socks5Port;
     const httpPort = serverConfig.httpPort;
