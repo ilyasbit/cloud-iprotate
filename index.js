@@ -1,15 +1,15 @@
-const express = require("express");
-const app = express();
-const bodyParser = require("body-parser");
-const fs = require("fs");
-const morgan = require("morgan");
-const axios = require("axios");
-const { spawn } = require("child_process");
-const { performance } = require("perf_hooks");
-const { SocksProxyAgent } = require("socks-proxy-agent");
-const tencentcloud = require("tencentcloud-sdk-nodejs");
-const { DefaultAzureCredential } = require("@azure/identity");
-const { NetworkManagementClient } = require("@azure/arm-network");
+const express = require('express')
+const app = express()
+const bodyParser = require('body-parser')
+const fs = require('fs')
+const morgan = require('morgan')
+const axios = require('axios')
+const { spawn } = require('child_process')
+const { performance } = require('perf_hooks')
+const { SocksProxyAgent } = require('socks-proxy-agent')
+const tencentcloud = require('tencentcloud-sdk-nodejs')
+const { DefaultAzureCredential } = require('@azure/identity')
+const { NetworkManagementClient } = require('@azure/arm-network')
 const {
   EC2Client,
   AllocateAddressCommand,
@@ -18,86 +18,86 @@ const {
   DescribeAddressesCommand,
   ReleaseAddressCommand,
   DescribeInstancesCommand,
-} = require("@aws-sdk/client-ec2");
-const ConfigParser = require("configparser");
-const { exec } = require("child_process");
-app.use(bodyParser.json());
-app.use(morgan("combined"));
-const config = new ConfigParser();
-config.read("config.conf");
-const prefix = config.get("api", "prefix");
-const appPort = config.get("api", "port");
-const civoRouter = require("./routers/civo");
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+} = require('@aws-sdk/client-ec2')
+const ConfigParser = require('configparser')
+const { exec } = require('child_process')
+app.use(bodyParser.json())
+app.use(morgan('combined'))
+const config = new ConfigParser()
+config.read('config.conf')
+const prefix = config.get('api', 'prefix')
+const appPort = config.get('api', 'port')
+const civoRouter = require('./routers/civo')
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 //clearup runningprocess.txt file
-fs.writeFile("runningprocess.txt", "", function (err) {
-  if (err) throw err;
-});
+fs.writeFile('runningprocess.txt', '', function (err) {
+  if (err) throw err
+})
 
 function startSessionLoop() {
-  sessionLoop = spawn("node", ["loop.js"]);
-  sessionLoop.on("error", (error) => {
-    console.error(`Session loop error: ${error.message}`);
-  });
-  sessionLoop.stdout.pipe(process.stdout);
-  sessionLoop.on("exit", (code, signal) => {
+  sessionLoop = spawn('node', ['loop.js'])
+  sessionLoop.on('error', (error) => {
+    console.error(`Session loop error: ${error.message}`)
+  })
+  sessionLoop.stdout.pipe(process.stdout)
+  sessionLoop.on('exit', (code, signal) => {
     //console.log(`Session loop exited with code ${code} and signal ${signal}`);
     if (code !== 0 || code === 0) {
       //console.log("Respawning session loop...");
-      startSessionLoop();
+      startSessionLoop()
     }
-  });
+  })
 }
-app.use(`/${prefix}/civo`, civoRouter);
+app.use(`/${prefix}/civo`, civoRouter)
 if (require.main === module) {
-  startSessionLoop();
-  app.listen(appPort, "0.0.0.0", () => {
-    console.log(`Listening on port ${appPort}`);
-  });
+  startSessionLoop()
+  app.listen(appPort, '0.0.0.0', () => {
+    console.log(`Listening on port ${appPort}`)
+  })
 }
 async function newIpAws(serverConfig) {
-  const accessKey = serverConfig.accessKey;
-  const secretKey = serverConfig.secretKey;
-  const instanceId = serverConfig.instanceId;
-  const region = serverConfig.region;
+  const accessKey = serverConfig.accessKey
+  const secretKey = serverConfig.secretKey
+  const instanceId = serverConfig.instanceId
+  const region = serverConfig.region
   const ec2 = new EC2Client({
     region: region,
     credentials: {
       accessKeyId: accessKey,
       secretAccessKey: secretKey,
     },
-  });
+  })
   async function disassociateAndRelease() {
     //list all elastic ip with tag instance=instanceId
     try {
       const command = new DescribeAddressesCommand({
         Filters: [
           {
-            Name: "tag:instance",
+            Name: 'tag:instance',
             Values: [instanceId],
           },
         ],
-      });
-      const response = await ec2.send(command);
+      })
+      const response = await ec2.send(command)
       if (response.Addresses.length > 0) {
-        console.log(response);
+        console.log(response)
         for (let i = 0; i < response.Addresses.length; i++) {
           try {
             const command = new DisassociateAddressCommand({
               AssociationId: response.Addresses[i].AssociationId,
-            });
-            await ec2.send(command);
+            })
+            await ec2.send(command)
           } catch (err) {}
           try {
             const command2 = new ReleaseAddressCommand({
               AllocationId: response.Addresses[i].AllocationId,
-            });
-            await ec2.send(command2);
+            })
+            await ec2.send(command2)
           } catch (err) {}
         }
       }
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
 
@@ -105,264 +105,264 @@ async function newIpAws(serverConfig) {
     try {
       const command = new DescribeInstancesCommand({
         InstanceIds: [instanceId],
-      });
-      const response = await ec2.send(command);
-      return response.Reservations[0].Instances[0].PublicIpAddress;
+      })
+      const response = await ec2.send(command)
+      return response.Reservations[0].Instances[0].PublicIpAddress
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
-  const oldIp = await getInstanceIp();
+  const oldIp = await getInstanceIp()
   async function allocateElasticIp() {
     try {
       const command = new AllocateAddressCommand({
         TagSpecifications: [
           {
-            ResourceType: "elastic-ip",
-            Tags: [{ Key: "instance", Value: instanceId }],
+            ResourceType: 'elastic-ip',
+            Tags: [{ Key: 'instance', Value: instanceId }],
           },
         ],
-      });
-      const response = await ec2.send(command);
+      })
+      const response = await ec2.send(command)
       return {
         elasticIp: response.PublicIp,
         allocationId: response.AllocationId,
-      };
+      }
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
-  await disassociateAndRelease();
-  const allocateIp = await allocateElasticIp();
+  await disassociateAndRelease()
+  const allocateIp = await allocateElasticIp()
   async function associateIp() {
     try {
       const command = new AssociateAddressCommand({
         InstanceId: instanceId,
         PublicIp: allocateIp.elasticIp,
-      });
-      const response = await ec2.send(command);
-      return response;
+      })
+      const response = await ec2.send(command)
+      return response
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
-  const asassociate = await associateIp();
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const asassociate = await associateIp()
+  await new Promise((resolve) => setTimeout(resolve, 1500))
   async function disassociateIp() {
     try {
       const command = new DisassociateAddressCommand({
         PublicIp: allocateIp.elasticIp,
-      });
-      const response = await ec2.send(command);
-      return response;
+      })
+      const response = await ec2.send(command)
+      return response
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
-  disassociateIp();
+  disassociateIp()
   async function releaseIp() {
     try {
       const command = new ReleaseAddressCommand({
         AllocationId: allocateIp.allocationId,
-      });
-      const response = await ec2.send(command);
-      return response;
+      })
+      const response = await ec2.send(command)
+      return response
     } catch (err) {
-      console.error(err);
+      console.error(err)
     }
   }
-  releaseIp();
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  const newIp = await getInstanceIp();
-  return { oldIp: oldIp, newIp: newIp };
+  releaseIp()
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  const newIp = await getInstanceIp()
+  return { oldIp: oldIp, newIp: newIp }
 }
 
 async function newIpAzure(serverConfig) {
-  process.env.AZURE_CLIENT_ID = serverConfig.clientId;
-  process.env.AZURE_CLIENT_SECRET = serverConfig.clientSecret;
-  process.env.AZURE_SUBSCRIPTION_ID = serverConfig.subscriptionId;
-  process.env.AZURE_TENANT_ID = serverConfig.tenantId;
-  const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID;
-  const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
-  const AZURE_SUBSCRIPTION_ID = process.env.AZURE_SUBSCRIPTION_ID;
-  const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
-  const resourceGroupName = serverConfig.resourceGroupName;
-  const publicIpName = serverConfig.publicIpName;
-  const nicName = serverConfig.nicName;
+  process.env.AZURE_CLIENT_ID = serverConfig.clientId
+  process.env.AZURE_CLIENT_SECRET = serverConfig.clientSecret
+  process.env.AZURE_SUBSCRIPTION_ID = serverConfig.subscriptionId
+  process.env.AZURE_TENANT_ID = serverConfig.tenantId
+  const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID
+  const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET
+  const AZURE_SUBSCRIPTION_ID = process.env.AZURE_SUBSCRIPTION_ID
+  const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID
+  const resourceGroupName = serverConfig.resourceGroupName
+  const publicIpName = serverConfig.publicIpName
+  const nicName = serverConfig.nicName
 
   const credential = new DefaultAzureCredential({
     clientId: AZURE_CLIENT_ID,
     clientSecret: AZURE_CLIENT_SECRET,
     tenantId: AZURE_TENANT_ID,
-  });
+  })
 
   const networkClient = new NetworkManagementClient(
     credential,
     AZURE_SUBSCRIPTION_ID
-  );
+  )
 
   async function getNic() {
     const nic = await networkClient.networkInterfaces.get(
       resourceGroupName,
       nicName
-    );
-    return nic;
+    )
+    return nic
   }
 
   async function getIpDetail() {
     const ip = await networkClient.publicIPAddresses.get(
       resourceGroupName,
       publicIpName
-    );
-    return ip;
+    )
+    return ip
   }
 
   async function disassociate(nic) {
-    nic.ipConfigurations[0].publicIPAddress = null;
+    nic.ipConfigurations[0].publicIPAddress = null
     const disassociate =
       await networkClient.networkInterfaces.beginCreateOrUpdate(
         resourceGroupName,
         nicName,
         nic
-      );
-    return disassociate;
+      )
+    return disassociate
   }
 
   async function associate(nic, ip) {
-    nic.ipConfigurations[0].publicIPAddress = ip;
+    nic.ipConfigurations[0].publicIPAddress = ip
 
     await networkClient.networkInterfaces.beginCreateOrUpdate(
       resourceGroupName,
       nicName,
       nic
-    );
+    )
   }
-  let oldIp;
-  let ip, nic;
-  let retries = 0;
-  let max = 10;
+  let oldIp
+  let ip, nic
+  let retries = 0
+  let max = 10
   while (true) {
     try {
-      [ip, nic] = await Promise.all([getIpDetail(), getNic()]);
-      break;
+      ;[ip, nic] = await Promise.all([getIpDetail(), getNic()])
+      break
     } catch (err) {
-      retries++;
+      retries++
       if (retries < max) {
-        continue;
+        continue
       } else if (retries === max) {
-        throw new Error("Failed to get ip or nic on first action");
+        throw new Error('Failed to get ip or nic on first action')
       }
     }
   }
 
-  await sleep(500);
-  oldIp = ip.ipAddress;
+  await sleep(500)
+  oldIp = ip.ipAddress
   if (!oldIp) {
-    oldIp = null;
+    oldIp = null
   }
-  await disassociate(nic);
-  await sleep(500);
-  nic = await getNic();
-  retries = 0;
-  max = 10;
+  await disassociate(nic)
+  await sleep(500)
+  nic = await getNic()
+  retries = 0
+  max = 10
   while (true) {
     if (!nic.ipConfigurations[0].publicIPAddress) {
       try {
-        await disassociate(nic);
+        await disassociate(nic)
       } catch (err) {}
-      break;
+      break
     } else {
       try {
-        await disassociate(nic);
-        nic = await getNic();
-        await sleep(500);
-        retries++;
+        await disassociate(nic)
+        nic = await getNic()
+        await sleep(500)
+        retries++
         if (retries < max) {
-          continue;
+          continue
         } else if (retries === max) {
-          throw new Error("Failed to disassociate ip");
+          throw new Error('Failed to disassociate ip')
         }
       } catch (err) {}
     }
   }
-  retries = 0;
-  max = 10;
+  retries = 0
+  max = 10
   while (true) {
     try {
-      [ip, nic] = await Promise.all([getIpDetail(), getNic()]);
-      break;
+      ;[ip, nic] = await Promise.all([getIpDetail(), getNic()])
+      break
     } catch (err) {
-      retries++;
+      retries++
       if (retries < max) {
-        continue;
+        continue
       } else if (retries === max) {
-        throw new Error("Failed to get ip or nic on seconds action");
+        throw new Error('Failed to get ip or nic on seconds action')
       }
     }
   }
-  await sleep(500);
-  retries = 0;
-  max = 10;
+  await sleep(500)
+  retries = 0
+  max = 10
   while (true) {
     try {
-      await associate(nic, ip);
-      await sleep(500);
-      break;
+      await associate(nic, ip)
+      await sleep(500)
+      break
     } catch (err) {
-      retries++;
+      retries++
       if (retries < max) {
-        continue;
+        continue
       } else if (retries === max) {
-        throw new Error("Failed to associate ip");
+        throw new Error('Failed to associate ip')
       }
     }
   }
-  retries = 0;
-  max = 10;
+  retries = 0
+  max = 10
   while (true) {
     try {
-      [ip, nic] = await Promise.all([getIpDetail(), getNic()]);
-      break;
+      ;[ip, nic] = await Promise.all([getIpDetail(), getNic()])
+      break
     } catch (err) {
-      retries++;
+      retries++
       if (retries < max) {
-        continue;
+        continue
       } else if (retries === max) {
-        throw new Error("Failed to get ip or nic on third action");
+        throw new Error('Failed to get ip or nic on third action')
       }
     }
   }
-  retries = 0;
-  max = 50;
-  let newIp = ip.ipAddress;
+  retries = 0
+  max = 50
+  let newIp = ip.ipAddress
   while (true) {
     if (!newIp || newIp === oldIp) {
-      await sleep(1000);
-      ip = await getIpDetail();
-      newIp = ip.ipAddress;
-      retries++;
+      await sleep(1000)
+      ip = await getIpDetail()
+      newIp = ip.ipAddress
+      retries++
       if (retries < max) {
-        continue;
+        continue
       } else {
-        throw new Error("Failed to get new I, max retries reached");
+        throw new Error('Failed to get new I, max retries reached')
       }
     } else {
-      break;
+      break
     }
   }
 
   if (!newIp) {
-    throw new Error("Failed to get new IP");
+    throw new Error('Failed to get new IP')
   }
-  return { oldIp: oldIp, newIp: newIp };
+  return { oldIp: oldIp, newIp: newIp }
 }
 
 async function newIpTencent(serverConfig) {
-  const CvmClient = tencentcloud.cvm.v20170312.Client;
-  const secretId = serverConfig.secretId;
-  const secretKey = serverConfig.secretKey;
-  const region = serverConfig.region;
-  const instanceId = serverConfig.instanceId;
+  const CvmClient = tencentcloud.cvm.v20170312.Client
+  const secretId = serverConfig.secretId
+  const secretKey = serverConfig.secretKey
+  const region = serverConfig.region
+  const instanceId = serverConfig.instanceId
   const clientConfig = {
     credential: {
       secretId: secretId,
@@ -371,90 +371,90 @@ async function newIpTencent(serverConfig) {
     region: region,
     profile: {
       httpProfile: {
-        endpoint: "cvm.tencentcloudapi.com",
+        endpoint: 'cvm.tencentcloudapi.com',
       },
     },
-  };
-  const client = new CvmClient(clientConfig);
+  }
+  const client = new CvmClient(clientConfig)
   const params = {
     InstanceIds: [instanceId],
-  };
+  }
   const stopParams = {
     InstanceIds: [`${instanceId}`],
-    StopType: "HARD",
-    StoppedMode: "STOP_CHARGING",
-  };
-  let instanceDescribed = await client.DescribeInstances(params);
-  let oldIp = "";
+    StopType: 'HARD',
+    StoppedMode: 'STOP_CHARGING',
+  }
+  let instanceDescribed = await client.DescribeInstances(params)
+  let oldIp = ''
   if (
     instanceDescribed.InstanceSet[0].PublicIpAddresses == null ||
     instanceDescribed.InstanceSet[0].PublicIpAddresses.length === 0
   ) {
-    oldIp = "";
+    oldIp = ''
   } else {
-    oldIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0];
+    oldIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0]
   }
-  instanceDescribed = await client.DescribeInstances(params);
-  if (instanceDescribed.InstanceSet[0].InstanceState === "RUNNING") {
+  instanceDescribed = await client.DescribeInstances(params)
+  if (instanceDescribed.InstanceSet[0].InstanceState === 'RUNNING') {
     const stopData = await client.StopInstances(stopParams).then(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      instanceDescribed = await client.DescribeInstances(params);
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      instanceDescribed = await client.DescribeInstances(params)
       while (true) {
         if (
-          instanceDescribed.InstanceSet[0].InstanceState == "STARTING" ||
-          instanceDescribed.InstanceSet[0].InstanceState == "STOPPING"
+          instanceDescribed.InstanceSet[0].InstanceState == 'STARTING' ||
+          instanceDescribed.InstanceSet[0].InstanceState == 'STOPPING'
         ) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          instanceDescribed = await client.DescribeInstances(params);
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+          instanceDescribed = await client.DescribeInstances(params)
         } else {
-          break;
+          break
         }
       }
-      await client.StartInstances(params);
+      await client.StartInstances(params)
       while (true) {
-        if (instanceDescribed.InstanceSet[0].InstanceState == "RUNNING") {
-          publicIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0];
-          break;
+        if (instanceDescribed.InstanceSet[0].InstanceState == 'RUNNING') {
+          publicIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0]
+          break
         } else {
-          instanceDescribed = await client.DescribeInstances(params);
+          instanceDescribed = await client.DescribeInstances(params)
         }
       }
-    });
-  } else if (instanceDescribed.InstanceSet[0].InstanceState === "STOPPED") {
-    await client.StartInstances(params);
+    })
+  } else if (instanceDescribed.InstanceSet[0].InstanceState === 'STOPPED') {
+    await client.StartInstances(params)
     while (true) {
-      if (instanceDescribed.InstanceSet[0].InstanceState == "RUNNING") {
-        publicIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0];
-        break;
+      if (instanceDescribed.InstanceSet[0].InstanceState == 'RUNNING') {
+        publicIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0]
+        break
       } else {
-        instanceDescribed = await client.DescribeInstances(params);
+        instanceDescribed = await client.DescribeInstances(params)
       }
     }
   }
-  return { oldIp: oldIp, newIp: publicIp };
+  return { oldIp: oldIp, newIp: publicIp }
 }
 
 async function parseConfig() {
-  config.read("config.conf");
-  const confList = config.sections();
-  let tencentConfigList = [];
-  let civoConfigList = [];
-  let azureConfigList = [];
-  let awsConfigList = [];
-  let cloudflareConfig = {};
-  let apiConfig = {};
+  config.read('config.conf')
+  const confList = config.sections()
+  let tencentConfigList = []
+  let civoConfigList = []
+  let azureConfigList = []
+  let awsConfigList = []
+  let cloudflareConfig = {}
+  let apiConfig = {}
   for (let i = 0; i < confList.length; i++) {
-    const configName = confList[i];
-    const configType = config.get(confList[i], "type");
-    if (configType == "tencent") {
-      const secretId = config.get(confList[i], "secretId");
-      const secretKey = config.get(confList[i], "secretKey");
-      const region = config.get(confList[i], "region");
-      const instanceId = config.get(confList[i], "instanceId");
-      const socks5Port = config.get(confList[i], "socks5Port");
-      const httpPort = config.get(confList[i], "httpPort");
-      const socks5User = config.get(confList[i], "socks5User");
-      const socks5Pass = config.get(confList[i], "socks5Pass");
+    const configName = confList[i]
+    const configType = config.get(confList[i], 'type')
+    if (configType == 'tencent') {
+      const secretId = config.get(confList[i], 'secretId')
+      const secretKey = config.get(confList[i], 'secretKey')
+      const region = config.get(confList[i], 'region')
+      const instanceId = config.get(confList[i], 'instanceId')
+      const socks5Port = config.get(confList[i], 'socks5Port')
+      const httpPort = config.get(confList[i], 'httpPort')
+      const socks5User = config.get(confList[i], 'socks5User')
+      const socks5Pass = config.get(confList[i], 'socks5Pass')
 
       const configration = {
         configName: configName,
@@ -464,48 +464,48 @@ async function parseConfig() {
         instanceId: instanceId,
         socks5Port: socks5Port,
         httpPort: httpPort,
-      };
-      if (socks5User && socks5Pass) {
-        configration.socks5User = socks5User;
-        configration.socks5Pass = socks5Pass;
       }
-      tencentConfigList.push(configration);
-    } else if (configType == "cloudflare") {
-      const email = config.get(confList[i], "email");
-      const token = config.get(confList[i], "token");
-      const domain = config.get(confList[i], "domain");
-      const configName = confList[i];
-      cloudflareConfig.email = email;
-      cloudflareConfig.token = token;
-      cloudflareConfig.domain = domain;
-      cloudflareConfig.configName = configName;
-    } else if (configType == "api") {
-      const prefix = config.get(confList[i], "prefix");
-      const port = config.get(confList[i], "port");
-      const hostLocalIp = config.get(confList[i], "hostLocalIp");
-      const hostPublicIp = config.get(confList[i], "hostPublicIp");
-      const key = config.get(confList[i], "key");
-      const apiHostName = config.get(confList[i], "apiHostName");
-      apiConfig.prefix = prefix;
-      apiConfig.port = port;
-      apiConfig.hostLocalIp = hostLocalIp;
-      apiConfig.hostPublicIp = hostPublicIp;
-      apiConfig.key = key;
-      apiConfig.apiHostName = apiHostName;
-    } else if (configType == "azure") {
-      const socks5Port = config.get(confList[i], "socks5Port");
-      const httpPort = config.get(confList[i], "httpPort");
-      const clientId = config.get(confList[i], "clientId");
-      const clientSecret = config.get(confList[i], "clientSecret");
-      const tenantId = config.get(confList[i], "tenantId");
-      const subscriptionId = config.get(confList[i], "subscriptionId");
-      const resourceGroupName = config.get(confList[i], "resourceGroupName");
-      const publicIpName = config.get(confList[i], "publicIpName");
-      const ipConfigName = config.get(confList[i], "ipConfigName");
-      const nicName = config.get(confList[i], "nicName");
-      const vmName = config.get(confList[i], "vmName");
-      const socks5User = config.get(confList[i], "socks5User");
-      const socks5Pass = config.get(confList[i], "socks5Pass");
+      if (socks5User && socks5Pass) {
+        configration.socks5User = socks5User
+        configration.socks5Pass = socks5Pass
+      }
+      tencentConfigList.push(configration)
+    } else if (configType == 'cloudflare') {
+      const email = config.get(confList[i], 'email')
+      const token = config.get(confList[i], 'token')
+      const domain = config.get(confList[i], 'domain')
+      const configName = confList[i]
+      cloudflareConfig.email = email
+      cloudflareConfig.token = token
+      cloudflareConfig.domain = domain
+      cloudflareConfig.configName = configName
+    } else if (configType == 'api') {
+      const prefix = config.get(confList[i], 'prefix')
+      const port = config.get(confList[i], 'port')
+      const hostLocalIp = config.get(confList[i], 'hostLocalIp')
+      const hostPublicIp = config.get(confList[i], 'hostPublicIp')
+      const key = config.get(confList[i], 'key')
+      const apiHostName = config.get(confList[i], 'apiHostName')
+      apiConfig.prefix = prefix
+      apiConfig.port = port
+      apiConfig.hostLocalIp = hostLocalIp
+      apiConfig.hostPublicIp = hostPublicIp
+      apiConfig.key = key
+      apiConfig.apiHostName = apiHostName
+    } else if (configType == 'azure') {
+      const socks5Port = config.get(confList[i], 'socks5Port')
+      const httpPort = config.get(confList[i], 'httpPort')
+      const clientId = config.get(confList[i], 'clientId')
+      const clientSecret = config.get(confList[i], 'clientSecret')
+      const tenantId = config.get(confList[i], 'tenantId')
+      const subscriptionId = config.get(confList[i], 'subscriptionId')
+      const resourceGroupName = config.get(confList[i], 'resourceGroupName')
+      const publicIpName = config.get(confList[i], 'publicIpName')
+      const ipConfigName = config.get(confList[i], 'ipConfigName')
+      const nicName = config.get(confList[i], 'nicName')
+      const vmName = config.get(confList[i], 'vmName')
+      const socks5User = config.get(confList[i], 'socks5User')
+      const socks5Pass = config.get(confList[i], 'socks5Pass')
       const configuration = {
         configName: confList[i],
         socks5Port: socks5Port,
@@ -519,21 +519,21 @@ async function parseConfig() {
         ipConfigName: ipConfigName,
         nicName: nicName,
         vmName: vmName,
-      };
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User;
-        configuration.socks5Pass = socks5Pass;
       }
-      azureConfigList.push(configuration);
-    } else if (configType == "aws") {
-      const accessKey = config.get(confList[i], "accessKey");
-      const secretKey = config.get(confList[i], "secretKey");
-      const instanceId = config.get(confList[i], "instanceId");
-      const region = config.get(confList[i], "region");
-      const socks5Port = config.get(confList[i], "socks5Port");
-      const httpPort = config.get(confList[i], "httpPort");
-      const socks5User = config.get(confList[i], "socks5User");
-      const socks5Pass = config.get(confList[i], "socks5Pass");
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User
+        configuration.socks5Pass = socks5Pass
+      }
+      azureConfigList.push(configuration)
+    } else if (configType == 'aws') {
+      const accessKey = config.get(confList[i], 'accessKey')
+      const secretKey = config.get(confList[i], 'secretKey')
+      const instanceId = config.get(confList[i], 'instanceId')
+      const region = config.get(confList[i], 'region')
+      const socks5Port = config.get(confList[i], 'socks5Port')
+      const httpPort = config.get(confList[i], 'httpPort')
+      const socks5User = config.get(confList[i], 'socks5User')
+      const socks5Pass = config.get(confList[i], 'socks5Pass')
       const configuration = {
         configName: confList[i],
         accessKey: accessKey,
@@ -542,33 +542,35 @@ async function parseConfig() {
         region: region,
         socks5Port: socks5Port,
         httpPort: httpPort,
-      };
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User;
-        configuration.socks5Pass = socks5Pass;
       }
-      awsConfigList.push(configuration);
-    } else if (configType == "civo") {
-      const token = config.get(confList[i], "token");
-      const cookie = config.get(confList[i], "cookie");
-      const instanceId = config.get(confList[i], "instanceId");
-      const socks5Port = config.get(confList[i], "socks5Port");
-      const httpPort = config.get(confList[i], "httpPort");
-      const socks5User = config.get(confList[i], "socks5User");
-      const socks5Pass = config.get(confList[i], "socks5Pass");
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User
+        configuration.socks5Pass = socks5Pass
+      }
+      awsConfigList.push(configuration)
+    } else if (configType == 'civo') {
+      const token = config.get(confList[i], 'token')
+      const cookie = config.get(confList[i], 'cookie')
+      const instanceId = config.get(confList[i], 'instanceId')
+      const socks5Port = config.get(confList[i], 'socks5Port')
+      const httpPort = config.get(confList[i], 'httpPort')
+      const socks5User = config.get(confList[i], 'socks5User')
+      const socks5Pass = config.get(confList[i], 'socks5Pass')
+      const region = config.get(confList[i], 'region')
       const configuration = {
         configName: confList[i],
         token: token,
         cookie: cookie,
+        region: region,
         instanceId: instanceId,
         socks5Port: socks5Port,
         httpPort: httpPort,
-      };
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User;
-        configuration.socks5Pass = socks5Pass;
       }
-      civoConfigList.push(configuration);
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User
+        configuration.socks5Pass = socks5Pass
+      }
+      civoConfigList.push(configuration)
     }
   }
   return {
@@ -580,43 +582,43 @@ async function parseConfig() {
       azure: azureConfigList,
       aws: awsConfigList,
     },
-  };
+  }
 }
 
 async function checkCloudflare(serverConfig) {
-  const cloudflareEmail = serverConfig.email;
-  const cloudflareKey = serverConfig.token;
-  const cloudflareDomain = serverConfig.domain;
-  const configName = serverConfig.configName;
-  let result = {};
-  result.configName = configName;
+  const cloudflareEmail = serverConfig.email
+  const cloudflareKey = serverConfig.token
+  const cloudflareDomain = serverConfig.domain
+  const configName = serverConfig.configName
+  let result = {}
+  result.configName = configName
   try {
-    const cf = require("cloudflare")({
+    const cf = require('cloudflare')({
       email: cloudflareEmail,
       key: cloudflareKey,
-    });
+    })
     const zoneId = await cf.zones.browse().then((data) => {
-      const zone = data.result.find((zone) => zone.name == cloudflareDomain);
-      return zone.id;
-    });
+      const zone = data.result.find((zone) => zone.name == cloudflareDomain)
+      return zone.id
+    })
     if (!zoneId) {
-      return false;
+      return false
     }
-    result.zoneId = zoneId;
-    result.success = true;
+    result.zoneId = zoneId
+    result.success = true
   } catch (err) {
-    result.success = false;
+    result.success = false
   }
-  return result;
+  return result
 }
 
 async function checkTencent(serverConfig) {
-  const CvmClient = tencentcloud.cvm.v20170312.Client;
-  const secretId = serverConfig.secretId;
-  const secretKey = serverConfig.secretKey;
-  const region = serverConfig.region;
-  const instanceId = serverConfig.instanceId;
-  const configName = serverConfig.configName;
+  const CvmClient = tencentcloud.cvm.v20170312.Client
+  const secretId = serverConfig.secretId
+  const secretKey = serverConfig.secretKey
+  const region = serverConfig.region
+  const instanceId = serverConfig.instanceId
+  const configName = serverConfig.configName
   const clientConfig = {
     credential: {
       secretId: secretId,
@@ -625,248 +627,246 @@ async function checkTencent(serverConfig) {
     region: region,
     profile: {
       httpProfile: {
-        endpoint: "cvm.tencentcloudapi.com",
+        endpoint: 'cvm.tencentcloudapi.com',
       },
     },
-  };
-  const client = new CvmClient(clientConfig);
+  }
+  const client = new CvmClient(clientConfig)
   const params = {
     InstanceIds: [instanceId],
-  };
-  let result = {};
-  result.configName = serverConfig.configName;
+  }
+  let result = {}
+  result.configName = serverConfig.configName
   try {
-    let instanceDescribed = await client.DescribeInstances(params);
-    let oldIp = "";
+    let instanceDescribed = await client.DescribeInstances(params)
+    let oldIp = ''
     if (
       instanceDescribed.InstanceSet[0].PublicIpAddresses == null ||
       instanceDescribed.InstanceSet[0].PublicIpAddresses.length === 0
     ) {
-      oldIp = "";
+      oldIp = ''
     } else {
-      oldIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0];
+      oldIp = instanceDescribed.InstanceSet[0].PublicIpAddresses[0]
     }
-    result.success = true;
-    result.ip = oldIp;
+    result.success = true
+    result.ip = oldIp
   } catch (err) {
-    result.success = false;
+    result.success = false
   }
-  return result;
+  return result
 }
 async function checkAws(serverConfig) {
-  const accessKey = serverConfig.accessKey;
-  const secretKey = serverConfig.secretKey;
-  const instanceId = serverConfig.instanceId;
-  const region = serverConfig.region;
-  const configName = serverConfig.configName;
+  const accessKey = serverConfig.accessKey
+  const secretKey = serverConfig.secretKey
+  const instanceId = serverConfig.instanceId
+  const region = serverConfig.region
+  const configName = serverConfig.configName
   const ec2 = new EC2Client({
     region: region,
     credentials: {
       accessKeyId: accessKey,
       secretAccessKey: secretKey,
     },
-  });
-  let result = {};
-  result.configName = configName;
+  })
+  let result = {}
+  result.configName = configName
   try {
     async function getInstanceIp() {
       try {
         const command = new DescribeInstancesCommand({
           InstanceIds: [instanceId],
-        });
-        const response = await ec2.send(command);
-        return response.Reservations[0].Instances[0].PublicIpAddress;
+        })
+        const response = await ec2.send(command)
+        return response.Reservations[0].Instances[0].PublicIpAddress
       } catch (err) {
-        console.error(err);
+        console.error(err)
       }
     }
-    const oldIp = await getInstanceIp();
-    result.success = true;
-    result.ip = oldIp;
+    const oldIp = await getInstanceIp()
+    result.success = true
+    result.ip = oldIp
   } catch (err) {
-    result.success = false;
+    result.success = false
   }
-  return result;
+  return result
 }
 async function checkAzure(serverConfig) {
-  process.env.AZURE_CLIENT_ID = serverConfig.clientId;
-  process.env.AZURE_CLIENT_SECRET = serverConfig.clientSecret;
-  process.env.AZURE_SUBSCRIPTION_ID = serverConfig.subscriptionId;
-  process.env.AZURE_TENANT_ID = serverConfig.tenantId;
-  const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID;
-  const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
-  const AZURE_SUBSCRIPTION_ID = process.env.AZURE_SUBSCRIPTION_ID;
-  const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
-  const resourceGroupName = serverConfig.resourceGroupName;
-  const publicIpName = serverConfig.publicIpName;
-  const nicName = serverConfig.nicName;
+  process.env.AZURE_CLIENT_ID = serverConfig.clientId
+  process.env.AZURE_CLIENT_SECRET = serverConfig.clientSecret
+  process.env.AZURE_SUBSCRIPTION_ID = serverConfig.subscriptionId
+  process.env.AZURE_TENANT_ID = serverConfig.tenantId
+  const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID
+  const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET
+  const AZURE_SUBSCRIPTION_ID = process.env.AZURE_SUBSCRIPTION_ID
+  const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID
+  const resourceGroupName = serverConfig.resourceGroupName
+  const publicIpName = serverConfig.publicIpName
+  const nicName = serverConfig.nicName
 
   const credential = new DefaultAzureCredential({
     clientId: AZURE_CLIENT_ID,
     clientSecret: AZURE_CLIENT_SECRET,
     tenantId: AZURE_TENANT_ID,
-  });
-  let result = {};
-  result.configName = serverConfig.configName;
+  })
+  let result = {}
+  result.configName = serverConfig.configName
   try {
     const networkClient = new NetworkManagementClient(
       credential,
       AZURE_SUBSCRIPTION_ID
-    );
+    )
     async function getIpDetail() {
       const ip = await networkClient.publicIPAddresses.get(
         resourceGroupName,
         publicIpName
-      );
-      return ip;
+      )
+      return ip
     }
     async function getNic() {
       const nic = await networkClient.networkInterfaces.get(
         resourceGroupName,
         nicName
-      );
-      return nic;
+      )
+      return nic
     }
-    const [nic, ip] = await Promise.all([getNic(), getIpDetail()]);
+    const [nic, ip] = await Promise.all([getNic(), getIpDetail()])
     if (nic && ip) {
-      result.success = true;
+      result.success = true
       if (ip.ipAddress) {
-        result.ip = ip.ipAddress;
+        result.ip = ip.ipAddress
       }
     }
   } catch (error) {
-    result.success = false;
-    result.error = error.message;
+    result.success = false
+    result.error = error.message
   }
-  return result;
+  return result
 }
 
 async function refreshCreds(response, configName) {
-  const body = response.data;
-  const token = body.match(/<meta name="csrf-token" content="(.*)" \/>/)[1];
-  const cookie = response.headers["set-cookie"][0].split(";")[0].split("=")[1];
-  const lastCheck = new Date().toISOString();
-  config.set(configName, "cookie", cookie);
-  config.set(configName, "token", token);
-  config.set(configName, "lastCheck", lastCheck);
-  config.write("config.conf");
+  const body = response.data
+  const token = body.match(/<meta name="csrf-token" content="(.*)" \/>/)[1]
+  const cookie = response.headers['set-cookie'][0].split(';')[0].split('=')[1]
+  const lastCheck = new Date().toISOString()
+  config.set(configName, 'cookie', cookie)
+  config.set(configName, 'token', token)
+  config.set(configName, 'lastCheck', lastCheck)
+  config.write('config.conf')
 }
 
 app.get(`/${prefix}/newip/`, async (req, res) => {
-  const startTime = performance.now();
-  let configName = req.query.configName;
-  let port = req.query.port;
-  const { configs } = await parseConfig();
+  const startTime = performance.now()
+  let configName = req.query.configName
+  let port = req.query.port
+  const { configs } = await parseConfig()
   //only accept one of query
   if (!configName && !port) {
     return res
       .status(400)
-      .json({ success: false, error: "bad request, no query found" });
+      .json({ success: false, error: 'bad request, no query found' })
   }
   if (configName && port) {
     return res.status(400).json({
       success: false,
-      error: "bad request, only accept one query (configName/port)",
-    });
+      error: 'bad request, only accept one query (configName/port)',
+    })
   }
 
   if (!configName) {
     try {
       const tencentConfig = configs.tencent.find(
         (config) => config.socks5Port == port || config.httpPort == port
-      );
+      )
       const azureConfig = configs.azure.find(
         (config) => config.socks5Port == port || config.httpPort == port
-      );
+      )
       const awsConfig = configs.aws.find(
         (config) => config.socks5Port == port || config.httpPort == port
-      );
+      )
 
-      const foundConfig = tencentConfig || azureConfig || awsConfig;
+      const foundConfig = tencentConfig || azureConfig || awsConfig
 
       if (!foundConfig) {
         return res.status(400).json({
           success: false,
           error: `bad request, no config found with port ${port}`,
-        });
+        })
       }
 
-      configName = foundConfig.configName;
+      configName = foundConfig.configName
     } catch (err) {
-      console.error(err);
-      return res.status(500).json({ success: false, error: err.message });
+      console.error(err)
+      return res.status(500).json({ success: false, error: err.message })
     }
   }
-  console.log(`hit newip ${configName}`);
-  let result = {};
+  console.log(`hit newip ${configName}`)
+  let result = {}
   try {
-    const apiConfig = configs.api;
-    const apiHostName = apiConfig.apiHostName;
-    const cloudflareConfig = configs.cloudflare;
-    const domain = cloudflareConfig.domain;
-    const email = cloudflareConfig.email;
-    const token = cloudflareConfig.token;
-    const hostLocalIp = apiConfig.hostLocalIp;
-    const hostPublicIp = apiConfig.hostPublicIp;
-    const host = `${configName}.${domain}`;
-    const configType = config.get(configName, "type");
+    const apiConfig = configs.api
+    const apiHostName = apiConfig.apiHostName
+    const cloudflareConfig = configs.cloudflare
+    const domain = cloudflareConfig.domain
+    const email = cloudflareConfig.email
+    const token = cloudflareConfig.token
+    const hostLocalIp = apiConfig.hostLocalIp
+    const hostPublicIp = apiConfig.hostPublicIp
+    const host = `${configName}.${domain}`
+    const configType = config.get(configName, 'type')
     if (!configType) {
-      return res
-        .status(400)
-        .json({ success: false, error: "config not found" });
+      return res.status(400).json({ success: false, error: 'config not found' })
     }
     //check if configName exist in runningprocess.txt
-    let runningProcess = fs.readFileSync("runningprocess.txt", "utf8");
-    let runningProcessArray = runningProcess.split("\n");
+    let runningProcess = fs.readFileSync('runningprocess.txt', 'utf8')
+    let runningProcessArray = runningProcess.split('\n')
     let runningProcessIndex = runningProcessArray.findIndex((line) =>
       line.includes(`${configName}|`)
-    );
+    )
     //if exist, return success : false message already running
     if (runningProcessIndex != -1) {
-      let runningTime = runningProcessArray[runningProcessIndex].split("|")[1];
+      let runningTime = runningProcessArray[runningProcessIndex].split('|')[1]
       //if runningTime is more than 5 minutes, remove it from runningprocess.txt
       if (Date.now() - runningTime > 60000) {
-        runningProcessArray.splice(runningProcessIndex, 1);
-        fs.writeFileSync("runningprocess.txt", runningProcessArray.join("\n"));
+        runningProcessArray.splice(runningProcessIndex, 1)
+        fs.writeFileSync('runningprocess.txt', runningProcessArray.join('\n'))
       } else {
         return res
           .status(200)
-          .json({ success: false, message: "already running" });
+          .json({ success: false, message: 'already running' })
       }
     }
     //if not exist, add configName|timestamp to runningprocess.txt
-    runningProcessArray.push(`${configName}|${Date.now()}`);
-    fs.writeFileSync("runningprocess.txt", runningProcessArray.join("\n"));
+    runningProcessArray.push(`${configName}|${Date.now()}`)
+    fs.writeFileSync('runningprocess.txt', runningProcessArray.join('\n'))
 
     //stop service sslocal_$configName
     exec(`systemctl stop sslocal_${configName}`, (err, stdout, stderr) => {
       if (err) {
-        console.error(`Error stopping service: ${err}`);
-        return;
+        console.error(`Error stopping service: ${err}`)
+        return
       }
-    });
-    let serverConfig;
-    if (configType == "tencent") {
+    })
+    let serverConfig
+    if (configType == 'tencent') {
       serverConfig = configs.tencent.find(
         (config) => config.configName == configName
-      );
-      result = await newIpTencent(serverConfig);
-    } else if (configType == "azure") {
+      )
+      result = await newIpTencent(serverConfig)
+    } else if (configType == 'azure') {
       serverConfig = configs.azure.find(
         (config) => config.configName == configName
-      );
-      result = await newIpAzure(serverConfig);
-    } else if (configType == "aws") {
+      )
+      result = await newIpAzure(serverConfig)
+    } else if (configType == 'aws') {
       serverConfig = configs.aws.find(
         (config) => config.configName == configName
-      );
-      result = await newIpAws(serverConfig);
+      )
+      result = await newIpAws(serverConfig)
     }
-    const socks5Port = serverConfig.socks5Port;
-    const httpPort = serverConfig.httpPort;
-    const publicIp = result.newIp;
-    const socks5User = serverConfig.socks5User;
-    const socks5Pass = serverConfig.socks5Pass;
+    const socks5Port = serverConfig.socks5Port
+    const httpPort = serverConfig.httpPort
+    const publicIp = result.newIp
+    const socks5User = serverConfig.socks5User
+    const socks5Pass = serverConfig.socks5Pass
     if (socks5User && socks5Pass) {
       //generate auth_${configName}.json on /etc/shadowsocks
       const auth = {
@@ -878,184 +878,184 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
             },
           ],
         },
-      };
+      }
       fs.writeFileSync(
         `/etc/shadowsocks/auth_${configName}.json`,
         JSON.stringify(auth)
-      );
+      )
     }
     //check if host exist on /etc/hosts, if yes delete the line cotaint host
-    const hosts = fs.readFileSync("/etc/hosts", "utf8");
-    const hostsArray = hosts.split("\n");
-    const hostIndex = hostsArray.findIndex((line) => line.includes(host));
+    const hosts = fs.readFileSync('/etc/hosts', 'utf8')
+    const hostsArray = hosts.split('\n')
+    const hostIndex = hostsArray.findIndex((line) => line.includes(host))
     if (hostIndex != -1) {
-      hostsArray.splice(hostIndex, 1);
-      const newHosts = hostsArray.join("\n");
-      fs.writeFileSync("/etc/hosts", newHosts);
+      hostsArray.splice(hostIndex, 1)
+      const newHosts = hostsArray.join('\n')
+      fs.writeFileSync('/etc/hosts', newHosts)
     }
     //add host to /etc/hosts
-    fs.appendFileSync("/etc/hosts", `${publicIp} ${host}\n`);
+    fs.appendFileSync('/etc/hosts', `${publicIp} ${host}\n`)
     //update cloudflare dns record
     console.log(
       `profile: ${configName}, old ip: ${result.oldIp}, new ip: ${result.newIp}`
-    );
-    const cf = require("cloudflare")({
+    )
+    const cf = require('cloudflare')({
       email: email,
       key: token,
-    });
+    })
     const zoneId = await cf.zones.browse().then((data) => {
-      const zone = data.result.find((zone) => zone.name == domain);
-      return zone.id;
-    });
+      const zone = data.result.find((zone) => zone.name == domain)
+      return zone.id
+    })
     //check if dns record for host exist, if not create one, if yes update it
     const dnsRecord = await cf.dnsRecords.browse(zoneId).then((data) => {
-      const record = data.result.find((record) => record.name == host);
-      return record;
-    });
+      const record = data.result.find((record) => record.name == host)
+      return record
+    })
     if (dnsRecord == undefined) {
       await cf.dnsRecords.add(zoneId, {
-        type: "A",
+        type: 'A',
         name: host,
         content: publicIp,
         ttl: 1,
         proxied: false,
-      });
+      })
     } else {
       await cf.dnsRecords.edit(zoneId, dnsRecord.id, {
-        type: "A",
+        type: 'A',
         name: host,
         content: publicIp,
         ttl: 1,
         proxied: false,
-      });
+      })
     }
     const apiHostNameRecord = await cf.dnsRecords
       .browse(zoneId)
       .then((data) => {
-        const record = data.result.find((record) => record.name == apiHostName);
-        return record;
-      });
+        const record = data.result.find((record) => record.name == apiHostName)
+        return record
+      })
     if (apiHostNameRecord == undefined) {
       await cf.dnsRecords.add(zoneId, {
-        type: "A",
+        type: 'A',
         name: apiHostName,
         content: hostPublicIp,
         ttl: 1,
         proxied: false,
-      });
+      })
     } else if (apiHostNameRecord.content != hostPublicIp) {
       await cf.dnsRecords.edit(zoneId, apiHostNameRecord.id, {
-        type: "A",
+        type: 'A',
         name: apiHostName,
         content: hostPublicIp,
         ttl: 1,
         proxied: false,
-      });
+      })
     }
 
-    const configPath = `/etc/shadowsocks/config_${configName}.json`;
-    const configTemplate = fs.readFileSync("configtemplate.json", "utf8");
-    const configTemplateJson = JSON.parse(configTemplate);
-    configTemplateJson.server = host;
-    configTemplateJson.server_port = 8388;
-    configTemplateJson.password = "Pass";
-    configTemplateJson.method = "aes-128-gcm";
-    configTemplateJson.mode = "tcp_and_udp";
-    configTemplateJson.locals[0].local_address = hostLocalIp;
-    configTemplateJson.locals[0].local_port = parseInt(socks5Port);
-    configTemplateJson.locals[0].protocol = "socks";
+    const configPath = `/etc/shadowsocks/config_${configName}.json`
+    const configTemplate = fs.readFileSync('configtemplate.json', 'utf8')
+    const configTemplateJson = JSON.parse(configTemplate)
+    configTemplateJson.server = host
+    configTemplateJson.server_port = 8388
+    configTemplateJson.password = 'Pass'
+    configTemplateJson.method = 'aes-128-gcm'
+    configTemplateJson.mode = 'tcp_and_udp'
+    configTemplateJson.locals[0].local_address = hostLocalIp
+    configTemplateJson.locals[0].local_port = parseInt(socks5Port)
+    configTemplateJson.locals[0].protocol = 'socks'
 
     if (socks5User && socks5Pass) {
-      configTemplateJson.locals[0].socks5_auth_config_path = `/etc/shadowsocks/auth_${configName}.json`;
+      configTemplateJson.locals[0].socks5_auth_config_path = `/etc/shadowsocks/auth_${configName}.json`
     }
-    configTemplateJson.locals[1].protocol = "http";
-    configTemplateJson.locals[1].local_address = hostLocalIp;
-    configTemplateJson.locals[1].local_port = parseInt(httpPort);
+    configTemplateJson.locals[1].protocol = 'http'
+    configTemplateJson.locals[1].local_address = hostLocalIp
+    configTemplateJson.locals[1].local_port = parseInt(httpPort)
     //check if directory /etc/shadowsocks/ exist, if not create one
-    if (!fs.existsSync("/etc/shadowsocks")) {
-      fs.mkdirSync("/etc/shadowsocks");
+    if (!fs.existsSync('/etc/shadowsocks')) {
+      fs.mkdirSync('/etc/shadowsocks')
     }
     if (!fs.existsSync(configPath)) {
       try {
-        fs.writeFileSync(configPath, "");
-        console.log(`Config file ${configPath} created successfully.`);
+        fs.writeFileSync(configPath, '')
+        console.log(`Config file ${configPath} created successfully.`)
       } catch (err) {
-        console.error(`Error creating config file: ${err}`);
+        console.error(`Error creating config file: ${err}`)
       }
     } else {
-      fs.writeFileSync(configPath, JSON.stringify(configTemplateJson));
-      console.log(`Config file ${configPath} updated successfully.`);
+      fs.writeFileSync(configPath, JSON.stringify(configTemplateJson))
+      console.log(`Config file ${configPath} updated successfully.`)
     }
 
-    const servicePath = `/etc/systemd/system/sslocal_${configName}.service`;
-    const serviceTemplate = fs.readFileSync("service_template.service", "utf8");
+    const servicePath = `/etc/systemd/system/sslocal_${configName}.service`
+    const serviceTemplate = fs.readFileSync('service_template.service', 'utf8')
 
-    const serviceTemplateArray = serviceTemplate.split("\n");
+    const serviceTemplateArray = serviceTemplate.split('\n')
     const serviceTemplateIndex = serviceTemplateArray.findIndex((line) =>
-      line.includes("ExecStart")
-    );
+      line.includes('ExecStart')
+    )
     serviceTemplateArray[
       serviceTemplateIndex
-    ] = `ExecStart=/usr/local/bin/sslocal -c /etc/shadowsocks/config_${configName}.json`;
-    const newServiceTemplate = serviceTemplateArray.join("\n");
-    fs.writeFileSync(servicePath, newServiceTemplate);
+    ] = `ExecStart=/usr/local/bin/sslocal -c /etc/shadowsocks/config_${configName}.json`
+    const newServiceTemplate = serviceTemplateArray.join('\n')
+    fs.writeFileSync(servicePath, newServiceTemplate)
     //enable and start sslocal_$configName.service
-    await exec(`systemctl daemon-reload`);
-    await exec(`systemctl start sslocal_${configName}.service`);
-    let retry = 0;
-    let maxRetry = 20;
+    await exec(`systemctl daemon-reload`)
+    await exec(`systemctl start sslocal_${configName}.service`)
+    let retry = 0
+    let maxRetry = 20
     for (retry = 0; retry < maxRetry; retry++) {
       try {
         //check socks5://localhost:socks5Port to fake.chiacloud.farm/ip using axios, if response.data == publicIp, break
-        let socks5Url;
+        let socks5Url
         if (socks5User && socks5Pass) {
-          socks5Url = `socks5://${socks5User}:${socks5Pass}@${hostPublicIp}:${socks5Port}`;
+          socks5Url = `socks5://${socks5User}:${socks5Pass}@${hostPublicIp}:${socks5Port}`
         } else {
-          socks5Url = `socks5://${hostPublicIp}:${socks5Port}`;
+          socks5Url = `socks5://${hostPublicIp}:${socks5Port}`
         }
-        const agent = new SocksProxyAgent(socks5Url);
-        console.log(`try to connect using ${socks5Url}`);
+        const agent = new SocksProxyAgent(socks5Url)
+        console.log(`try to connect using ${socks5Url}`)
         const response = await axios.request({
-          url: "http://fake.chiacloud.farm/ip",
-          method: "GET",
+          url: 'http://fake.chiacloud.farm/ip',
+          method: 'GET',
           httpsAgent: agent,
           httpAgent: agent,
           timeout: 1000,
-        });
+        })
         if (response.data == publicIp) {
-          break;
+          break
         }
       } catch (err) {
-        await sleep(1000);
-        continue;
+        await sleep(1000)
+        continue
       }
     }
     if (retry >= maxRetry) {
-      throw new Error("retry proxy connection exceed maxRetry");
+      throw new Error('retry proxy connection exceed maxRetry')
     }
     //remove configName from runningprocess.txt
-    runningProcess = fs.readFileSync("runningprocess.txt", "utf8");
-    runningProcessArray = runningProcess.split("\n");
+    runningProcess = fs.readFileSync('runningprocess.txt', 'utf8')
+    runningProcessArray = runningProcess.split('\n')
     runningProcessIndex = runningProcessArray.findIndex((line) =>
       line.includes(`${configName}|`)
-    );
-    runningProcessArray.splice(runningProcessIndex, 1);
-    const newRunningProcess = runningProcessArray.join("\n");
-    fs.writeFileSync("runningprocess.txt", newRunningProcess);
-    let socks5Proxy;
+    )
+    runningProcessArray.splice(runningProcessIndex, 1)
+    const newRunningProcess = runningProcessArray.join('\n')
+    fs.writeFileSync('runningprocess.txt', newRunningProcess)
+    let socks5Proxy
     if (socks5User && socks5Pass) {
-      socks5Proxy = `${socks5User}:${socks5Pass}@${apiHostName}:${socks5Port}`;
+      socks5Proxy = `${socks5User}:${socks5Pass}@${apiHostName}:${socks5Port}`
     } else {
-      socks5Proxy = `${apiHostName}:${socks5Port}`;
+      socks5Proxy = `${apiHostName}:${socks5Port}`
     }
     result.proxy = {
       socks5: socks5Proxy,
       http: `${apiHostName}:${httpPort}`,
       shadowsocks: `${host}:8388`,
-    };
-    result.configName = configName;
-    const endTime = performance.now();
-    const executionTime = parseInt((endTime - startTime) / 1000); // convert to seconds
+    }
+    result.configName = configName
+    const endTime = performance.now()
+    const executionTime = parseInt((endTime - startTime) / 1000) // convert to seconds
     return res.status(200).json({
       success: true,
       result: {
@@ -1065,54 +1065,54 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
         proxy: result.proxy,
       },
       executionTime: `${executionTime} seconds`,
-    });
+    })
   } catch (err) {
-    console.error(err);
+    console.error(err)
     //remove configName from runningprocess.txt
-    runningProcess = fs.readFileSync("runningprocess.txt", "utf8");
-    runningProcessArray = runningProcess.split("\n");
+    runningProcess = fs.readFileSync('runningprocess.txt', 'utf8')
+    runningProcessArray = runningProcess.split('\n')
     runningProcessIndex = runningProcessArray.findIndex(
       (line) => line == configName
-    );
-    runningProcessArray.splice(runningProcessIndex, 1);
-    const newRunningProcess = runningProcessArray.join("\n");
-    fs.writeFileSync("runningprocess.txt", newRunningProcess);
-    const endTime = performance.now();
-    const executionTime = parseInt((endTime - startTime) / 1000); // convert to seconds
+    )
+    runningProcessArray.splice(runningProcessIndex, 1)
+    const newRunningProcess = runningProcessArray.join('\n')
+    fs.writeFileSync('runningprocess.txt', newRunningProcess)
+    const endTime = performance.now()
+    const executionTime = parseInt((endTime - startTime) / 1000) // convert to seconds
     return res.status(500).json({
       success: false,
       configName: configName,
       error: err.message,
       executionTime: `${executionTime} seconds`,
-    });
+    })
   }
-});
+})
 
 app.get(`/${prefix}/checkConfig`, async (req, res) => {
-  console.log("hit checkConfig");
-  const { configs } = await parseConfig();
-  const tencentConfigList = configs.tencent;
-  const cloudflareConfig = configs.cloudflare;
-  const awsConfigList = configs.aws;
-  const azureConfigList = configs.azure;
-  let cloudflareCheckResult = {};
-  let tencentCheckResult = [];
-  let awsCheckResult = [];
-  let azureCheckResult = [];
+  console.log('hit checkConfig')
+  const { configs } = await parseConfig()
+  const tencentConfigList = configs.tencent
+  const cloudflareConfig = configs.cloudflare
+  const awsConfigList = configs.aws
+  const azureConfigList = configs.azure
+  let cloudflareCheckResult = {}
+  let tencentCheckResult = []
+  let awsCheckResult = []
+  let azureCheckResult = []
 
   try {
-    cloudflareCheckResult = await checkCloudflare(cloudflareConfig);
+    cloudflareCheckResult = await checkCloudflare(cloudflareConfig)
     tencentCheckResult = await Promise.all(
       tencentConfigList.map((config) => checkTencent(config))
-    );
+    )
     awsCheckResult = await Promise.all(
       awsConfigList.map((config) => checkAws(config))
-    );
+    )
     azureCheckResult = await Promise.all(
       azureConfigList.map((config) => checkAzure(config))
-    );
+    )
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message })
   }
   return res.status(200).json({
     success: true,
@@ -1122,8 +1122,8 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
       aws: awsCheckResult,
       azure: azureCheckResult,
     },
-  });
-});
+  })
+})
 
-exports.parseConfig = parseConfig;
-exports.refreshCreds = refreshCreds;
+exports.parseConfig = parseConfig
+exports.refreshCreds = refreshCreds
