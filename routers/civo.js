@@ -445,6 +445,29 @@ async function newIpCivo(serverConfig) {
   return result
 }
 
+router.get('/checkConfig', async function (req, res, next) {
+  const { configs } = await fromMain.parseConfig()
+  let civoCheckResult
+  let cloudflareCheckResult
+  try {
+    const cloudflareConfig = configs.cloudflare
+    cloudflareCheckResult = await checkCloudflare(cloudflareConfig)
+    const civoConfigList = configs.civo
+    civoCheckResult = await Promise.all(
+      civoConfigList.map((config) => checkCivo(config))
+    )
+  } catch (error) {
+    console.log(error)
+  }
+  return res.status(200).json({
+    success: true,
+    result: {
+      cloudflare: cloudflareCheckResult,
+      civo: civoCheckResult,
+    },
+  })
+})
+
 router.get('/newip', async function (req, res, next) {
   const startTime = performance.now()
   const configName = req.query.configName
@@ -460,6 +483,7 @@ router.get('/newip', async function (req, res, next) {
     const cloudflareConfig = configs.cloudflare
     const domain = cloudflareConfig.domain
     const email = cloudflareConfig.email
+    let zoneId = cloudflareConfig.zoneId
     const token = cloudflareConfig.token
     const hostLocalIp = apiConfig.hostLocalIp
     const hostPublicIp = apiConfig.hostPublicIp
@@ -557,10 +581,18 @@ router.get('/newip', async function (req, res, next) {
       email: email,
       key: token,
     })
-    const zoneId = await cf.zones.browse().then((data) => {
-      const zone = data.result.find((zone) => zone.name == domain)
-      return zone.id
-    })
+    if (!zoneId) {
+      zoneId = await cf.zones.browse().then((data) => {
+        const zone = data.result.find((zone) => zone.name == domain)
+        return zone.id
+      })
+      if (!zoneId) {
+        return res.status(400).json({
+          success: false,
+          error: `bad request, no zone found with domain ${domain}`,
+        })
+      }
+    }
     //check if dns record for host exist, if not create one, if yes update it
     const dnsRecord = await cf.dnsRecords.browse(zoneId).then((data) => {
       const record = data.result.find((record) => record.name == host)

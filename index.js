@@ -474,11 +474,15 @@ async function parseConfig() {
       const email = config.get(confList[i], 'email')
       const token = config.get(confList[i], 'token')
       const domain = config.get(confList[i], 'domain')
+      let zoneId = config.get(confList[i], 'zoneId')
       const configName = confList[i]
       cloudflareConfig.email = email
       cloudflareConfig.token = token
       cloudflareConfig.domain = domain
       cloudflareConfig.configName = configName
+      if (zoneId) {
+        cloudflareConfig.zoneId = zoneId
+      }
     } else if (configType == 'api') {
       const prefix = config.get(confList[i], 'prefix')
       const port = config.get(confList[i], 'port')
@@ -585,11 +589,80 @@ async function parseConfig() {
   }
 }
 
+async function checkCivo(serverConfig) {
+  const cookie = serverConfig.cookie
+  const instanceId = serverConfig.instanceId
+  const token = serverConfig.token
+  const configName = serverConfig.configName
+  async function getPublicIp(configName, cookie, instanceId) {
+    const url = `https://dashboard.civo.com/instances/${instanceId}`
+    const axiosConfig = {
+      headers: {
+        authority: 'dashboard.civo.com',
+        accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'max-age=0',
+        cookie: `_civo_session=${cookie};`,
+        referer: 'https://dashboard.civo.com/instances',
+        'sec-ch-ua':
+          '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Linux"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
+      },
+    }
+    const result = {}
+    try {
+      const response = await axios.get(url, axiosConfig)
+      const body = response.data
+      let ip
+      // if body contain <meta property="og:title" content="Log in to your dashboard - Civo.com" /> return false
+      if (
+        body.match(
+          /<meta property="og:title" content="Log in to your dashboard - Civo.com" \/>/
+        )
+      ) {
+        result.success = false
+        result.message = 'Invalid cookie'
+        return result
+      }
+      //parse ipaddress from this pattern <li>Public IP: <span class="js-clipboard" data-clipboard-text="74.220.18.67">74.220.18.67</span>
+      try {
+        ip = body.match(
+          /<li>Public IP: <span class="js-clipboard" data-clipboard-text="(.*)">(.*)<\/span>/
+        )[1]
+      } catch (e) {
+        ip = null
+      }
+
+      if (ip) {
+        result.success = true
+        result.configName = configName
+        result.ip = ip
+      }
+    } catch (error) {
+      console.log(error)
+      result.status = false
+    }
+    return result
+  }
+  const result = await getPublicIp(configName, cookie, instanceId)
+  return result
+}
+
 async function checkCloudflare(serverConfig) {
   const cloudflareEmail = serverConfig.email
   const cloudflareKey = serverConfig.token
   const cloudflareDomain = serverConfig.domain
   const configName = serverConfig.configName
+  let zoneId = serverConfig.zoneId
   let result = {}
   result.configName = configName
   try {
@@ -597,13 +670,17 @@ async function checkCloudflare(serverConfig) {
       email: cloudflareEmail,
       key: cloudflareKey,
     })
-    const zoneId = await cf.zones.browse().then((data) => {
-      const zone = data.result.find((zone) => zone.name == cloudflareDomain)
-      return zone.id
-    })
     if (!zoneId) {
-      return false
+      console.log('zoneId not found, try to get zoneId from cloudflare')
+      zoneId = await cf.zones.browse().then((data) => {
+        const zone = data.result.find((zone) => zone.name == cloudflareDomain)
+        return zone.id
+      })
+      if (!zoneId) {
+        return false
+      }
     }
+
     result.zoneId = zoneId
     result.success = true
   } catch (err) {
@@ -805,6 +882,7 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
     const apiConfig = configs.api
     const apiHostName = apiConfig.apiHostName
     const cloudflareConfig = configs.cloudflare
+    let zoneId = cloudflareConfig.zoneId
     const domain = cloudflareConfig.domain
     const email = cloudflareConfig.email
     const token = cloudflareConfig.token
@@ -903,10 +981,18 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
       email: email,
       key: token,
     })
-    const zoneId = await cf.zones.browse().then((data) => {
-      const zone = data.result.find((zone) => zone.name == domain)
-      return zone.id
-    })
+    if (!zoneId) {
+      zoneId = await cf.zones.browse().then((data) => {
+        const zone = data.result.find((zone) => zone.name == domain)
+        return zone.id
+      })
+      if (!zoneId) {
+        return res.status(400).json({
+          success: false,
+          error: `bad request, no zone found with domain ${domain}`,
+        })
+      }
+    }
     //check if dns record for host exist, if not create one, if yes update it
     const dnsRecord = await cf.dnsRecords.browse(zoneId).then((data) => {
       const record = data.result.find((record) => record.name == host)
@@ -1095,10 +1181,13 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
   const cloudflareConfig = configs.cloudflare
   const awsConfigList = configs.aws
   const azureConfigList = configs.azure
+  const civoConfigList = configs.civo
   let cloudflareCheckResult = {}
   let tencentCheckResult = []
   let awsCheckResult = []
   let azureCheckResult = []
+  let civoCheckResult = []
+  let result = {}
 
   try {
     cloudflareCheckResult = await checkCloudflare(cloudflareConfig)
@@ -1111,19 +1200,32 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
     azureCheckResult = await Promise.all(
       azureConfigList.map((config) => checkAzure(config))
     )
+    civoCheckResult = await Promise.all(
+      civoConfigList.map((config) => checkCivo(config))
+    )
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message })
   }
+  result.cloudflare = cloudflareCheckResult
+  if (tencentCheckResult.length > 0) {
+    result.tencent = tencentCheckResult
+  }
+  if (awsCheckResult.length > 0) {
+    result.aws = awsCheckResult
+  }
+  if (azureCheckResult.length > 0) {
+    result.azure = azureCheckResult
+  }
+  if (civoCheckResult.length > 0) {
+    result.civo = civoCheckResult
+  }
+
   return res.status(200).json({
     success: true,
-    result: {
-      cloudflare: cloudflareCheckResult,
-      tencent: tencentCheckResult,
-      aws: awsCheckResult,
-      azure: azureCheckResult,
-    },
+    result: result,
   })
 })
 
 exports.parseConfig = parseConfig
 exports.refreshCreds = refreshCreds
+exports.checkCloudflare = checkCloudflare
