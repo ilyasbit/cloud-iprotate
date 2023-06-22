@@ -441,6 +441,7 @@ async function parseConfig() {
   let civoConfigList = []
   let azureConfigList = []
   let awsConfigList = []
+  let biznetConfigList = []
   let cloudflareConfig = {}
   let apiConfig = {}
   for (let i = 0; i < confList.length; i++) {
@@ -575,6 +576,29 @@ async function parseConfig() {
         configuration.socks5Pass = socks5Pass
       }
       civoConfigList.push(configuration)
+    } else if (configType == 'biznet') {
+      const token = config.get(confList[i], 'token')
+      const projectId = config.get(confList[i], 'projectId')
+      const networkId = config.get(confList[i], 'networkId')
+      const portId = config.get(confList[i], 'portId')
+      const region = config.get(confList[i], 'region')
+      const socks5Port = config.get(confList[i], 'socks5Port')
+      const httpPort = config.get(confList[i], 'httpPort')
+      const configuration = {
+        configName: confList[i],
+        token: token,
+        projectId: projectId,
+        networkId: networkId,
+        portId: portId,
+        region: region,
+        socks5Port: socks5Port,
+        httpPort: httpPort,
+      }
+      if (socks5User && socks5Pass) {
+        configuration.socks5User = socks5User
+        configuration.socks5Pass = socks5Pass
+      }
+      biznetConfigList.push(configuration)
     }
   }
   return {
