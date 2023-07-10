@@ -1198,6 +1198,34 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
   }
 })
 
+app.get(`/${prefix}/key`, async (req, res) => {
+  try {
+    const apiKey = req.query.apiKey
+    const { configs } = await parseConfig()
+    const api = configs.api
+    if (apiKey != api.key) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid key',
+      })
+    }
+    //check if /home/iprotate/.ssh/id_rsa exists if not, execute ./generate_user.sh
+    const sshKeyPath = '/home/iprotate/.ssh/id_rsa'
+    if (!fs.existsSync(sshKeyPath)) {
+      await exec(`./generate_user.sh`)
+    }
+    //return file /home/iprotate/.ssh/id_rsa
+    const sshKey = fs.readFileSync(sshKeyPath, 'utf8')
+    return res.download(sshKeyPath, 'id_rsa')
+  } catch (err) {
+    console.error(err)
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    })
+  }
+})
+
 app.get(`/${prefix}/checkConfig`, async (req, res) => {
   console.log('hit checkConfig')
   const { configs } = await parseConfig()
