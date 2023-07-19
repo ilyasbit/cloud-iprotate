@@ -11,52 +11,9 @@ const { performance } = require('perf_hooks')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const { SocksProxyAgent } = require('socks-proxy-agent')
 const fromMain = require('../index.js')
+const { ConversionTaskFilterSensitiveLog } = require('@aws-sdk/client-ec2')
 
 async function newIpCivo(serverConfig) {
-  async function switchRegion(serverConfig) {
-    const cookie = serverConfig.cookie
-    const region = serverConfig.region
-    if (!region) {
-      throw new Error('Region not found')
-    }
-    const baseurl = `https://dashboard.civo.com/region/${region}?url=`
-    const url = baseurl + encodeURIComponent('https://dashboard.civo.com/')
-    const headers = {
-      authority: 'dashboard.civo.com',
-      accept:
-        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'accept-language': 'en-US,en;q=0.9,id;q=0.8',
-      'cache-control': 'max-age=0',
-      'content-type': 'application/x-www-form-urlencoded',
-      cookie: `_civo_session=${cookie}`,
-      origin: 'https://dashboard.civo.com',
-      'sec-ch-ua':
-        '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Linux"',
-      'sec-fetch-dest': 'document',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-site': 'same-origin',
-      'sec-fetch-user': '?1',
-      'upgrade-insecure-requests': '1',
-      'user-agent':
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
-    }
-    const result = await axios.get(url, { headers }).then((response) => {
-      let result = {}
-      const followUrl = response.request.res.responseUrl
-      const body = response.data
-      const token = body.match(/<meta name="csrf-token" content="(.*)" \/>/)[1]
-      const cookie = response.headers['set-cookie'][0]
-        .split(';')[0]
-        .split('=')[1]
-      result.token = token
-      result.cookie = cookie
-      return result
-    })
-    return result
-  }
-
   async function getReservedIp(serverConfig) {
     const cookie = serverConfig.cookie
     const instanceId = serverConfig.instanceId
@@ -122,7 +79,7 @@ async function newIpCivo(serverConfig) {
     }
   }
 
-  function deleteReservedIp(serverConfig, reservedIpId) {
+  async function deleteReservedIp(serverConfig, reservedIpId) {
     const cookie = serverConfig.cookie
     const token = serverConfig.token
     axios
@@ -217,6 +174,7 @@ async function newIpCivo(serverConfig) {
       result.ip = ip
     } catch (error) {
       result.status = false
+      result.err = error
     }
     return result
   }
@@ -383,6 +341,7 @@ async function newIpCivo(serverConfig) {
   let reservedIpId
   let reservedIpAddress
   let currentIp
+  currentIp = data
   if (!data.ip) {
     while (!assignNewIp) {
       assignNewIp = await assignPublicIp(instanceId, cookie)
@@ -399,43 +358,61 @@ async function newIpCivo(serverConfig) {
     await assignReservedIp(instanceId, reservedIpId, token, cookie)
     sleep(1000)
     currentIp = await getPublicIp(cookie, instanceId)
-    while (currentIp.reserved === true) {
-      const reservedIp = await getReservedIp(serverConfig)
-      reservedIpAddress = reservedIp.address
-      reservedIpId = reservedIp.id
-      await releaseReservedIp(reservedIpId, reservedIpAddress, cookie, token)
-      sleep(1000)
-      currentIp = await getPublicIp(cookie, instanceId)
-    }
-    while (!assignNewIp) {
-      assignNewIp = await assignPublicIp(instanceId, cookie)
-      sleep(500)
-    }
+    //while (currentIp.reserved === true) {
+    // const reservedIp = await getReservedIp(serverConfig)
+    //reservedIpAddress = reservedIp.address
+    //reservedIpId = reservedIp.id
+    //await releaseReservedIp(reservedIpId, reservedIpAddress, cookie, token)
+    //sleep(1000)
+    //currentIp = await getPublicIp(cookie, instanceId)
+    //}
+    //while (!assignNewIp) {
+    // assignNewIp = await assignPublicIp(instanceId, cookie)
+    //sleep(500)
+    //}
   } else if (data.reserved === true) {
-    while (!reservedIpAddress && !reservedIpId) {
-      const reservedIp = await getReservedIp(serverConfig)
-      reservedIpAddress = reservedIp.address
-      reservedIpId = reservedIp.id
-    }
-    sleep(1000)
-    currentIp = await getPublicIp(cookie, instanceId)
     while (currentIp.reserved === true) {
-      const reservedIp = await getReservedIp(serverConfig)
-      reservedIpAddress = reservedIp.address
-      reservedIpId = reservedIp.id
+      while (!reservedIpAddress && !reservedIpId) {
+        const reservedIp = await getReservedIp(serverConfig)
+        reservedIpAddress = reservedIp.address
+        reservedIpId = reservedIp.id
+      }
       await releaseReservedIp(reservedIpId, reservedIpAddress, cookie, token)
-      sleep(1000)
+      await sleep(1000)
+      await deleteReservedIp(serverConfig, reservedIpId)
+      await sleep(1000)
       currentIp = await getPublicIp(cookie, instanceId)
     }
-    while (!assignNewIp) {
-      assignNewIp = await assignPublicIp(instanceId, cookie)
-      sleep(500)
+    while (currentIp.reserved !== true) {
+      ;[reservedIpAddress, reservedIpId] = [null, null]
+      await createReservedIp(cookie, token, instanceId)
+      await sleep(1000)
+      while (!reservedIpAddress && !reservedIpId) {
+        const reservedIp = await getReservedIp(serverConfig)
+        reservedIpAddress = reservedIp.address
+        reservedIpId = reservedIp.id
+      }
+      await assignReservedIp(instanceId, reservedIpId, token, cookie)
+      await sleep(1000)
+      currentIp = await getPublicIp(cookie, instanceId)
     }
+    //while (currentIp.reserved === true) {
+    // const reservedIp = await getReservedIp(serverConfig)
+    //reservedIpAddress = reservedIp.address
+    // reservedIpId = reservedIp.id
+    //await releaseReservedIp(reservedIpId, reservedIpAddress, cookie, token)
+    //sleep(1000)
+    /// currentIp = await getPublicIp(cookie, instanceId)
+
+    //while (!assignNewIp) {
+    // assignNewIp = await assignPublicIp(instanceId, cookie)
+    // sleep(500)
+    //}
   }
   const newIp = await getPublicIp(cookie, instanceId)
-  if (reservedIpId && reservedIpAddress) {
-    await deleteReservedIp(serverConfig, reservedIpId)
-  }
+  //if (reservedIpId && reservedIpAddress) {
+  // await deleteReservedIp(serverConfig, reservedIpId)
+  //}
   const endTime = performance.now()
   const time = parseInt((endTime - startTime) / 1000)
   const newIpAddress = newIp.ip
@@ -540,6 +517,14 @@ router.get('/newip', async function (req, res, next) {
     const socks5User = serverConfig.socks5User
     const socks5Pass = serverConfig.socks5Pass
     if (result.oldIp === result.newIp || !result.newIp) {
+      runningProcess = fs.readFileSync('runningprocess.txt', 'utf8')
+      runningProcessArray = runningProcess.split('\n')
+      runningProcessIndex = runningProcessArray.findIndex((line) =>
+        line.includes(`${configName}|`)
+      )
+      runningProcessArray.splice(runningProcessIndex, 1)
+      const newRunningProcess = runningProcessArray.join('\n')
+      fs.writeFileSync('runningprocess.txt', newRunningProcess)
       return res.status(400).json({
         success: false,
         configName: configName,
