@@ -342,12 +342,8 @@ async function newIpCivo(serverConfig) {
   let reservedIpAddress
   let currentIp
   currentIp = data
-  if (!data.ip) {
-    while (!assignNewIp) {
-      assignNewIp = await assignPublicIp(instanceId, cookie)
-      sleep(500)
-    }
-  } else if (data.reserved !== true) {
+
+  if (data.reserved !== true) {
     await createReservedIp(cookie, token, instanceId)
     sleep(1000)
     while (!reservedIpAddress && !reservedIpId) {
@@ -392,6 +388,7 @@ async function newIpCivo(serverConfig) {
         reservedIpAddress = reservedIp.address
         reservedIpId = reservedIp.id
       }
+
       await assignReservedIp(instanceId, reservedIpId, token, cookie)
       await sleep(1000)
       currentIp = await getPublicIp(cookie, instanceId)
