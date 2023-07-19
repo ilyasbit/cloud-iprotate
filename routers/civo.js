@@ -371,9 +371,10 @@ async function newIpCivo(serverConfig) {
   }
 
   const { cookie, token, instanceId } = serverConfig
-  await switchRegion(serverConfig).catch((error) => {
-    throw new Error(error)
-  })
+
+  //await switchRegion(serverConfig).catch((error) => {
+  //  throw new Error(error)
+  //})
 
   const startTime = performance.now()
   const data = await getPublicIp(cookie, instanceId)
