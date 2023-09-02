@@ -616,7 +616,8 @@ async function parseConfig() {
 async function checkCivo(serverConfig) {
   const cookie = serverConfig.cookie
   const instanceId = serverConfig.instanceId
-  const token = serverConfig.token
+  const socks5Port = serverConfig.socks5Port
+
   const configName = serverConfig.configName
   async function getPublicIp(configName, cookie, instanceId) {
     const url = `https://dashboard.civo.com/instances/${instanceId}`
@@ -670,6 +671,7 @@ async function checkCivo(serverConfig) {
         result.success = true
         result.configName = configName
         result.ip = ip
+        result.socks5Port = socks5Port
       }
     } catch (error) {
       console.log(error)
@@ -1229,18 +1231,20 @@ app.get(`/${prefix}/key`, async (req, res) => {
 app.get(`/${prefix}/checkConfig`, async (req, res) => {
   console.log('hit checkConfig')
   const { configs } = await parseConfig()
+  const apiConfig = configs.api
   const tencentConfigList = configs.tencent
   const cloudflareConfig = configs.cloudflare
   const awsConfigList = configs.aws
   const azureConfigList = configs.azure
   const civoConfigList = configs.civo
+  const apiHostName = apiConfig.apiHostName
   let cloudflareCheckResult = {}
   let tencentCheckResult = []
   let awsCheckResult = []
   let azureCheckResult = []
   let civoCheckResult = []
   let result = {}
-
+  result.apiHostName = apiHostName
   try {
     cloudflareCheckResult = await checkCloudflare(cloudflareConfig)
     tencentCheckResult = await Promise.all(
@@ -1271,7 +1275,6 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
   if (civoCheckResult.length > 0) {
     result.civo = civoCheckResult
   }
-
   return res.status(200).json({
     success: true,
     result: result,
