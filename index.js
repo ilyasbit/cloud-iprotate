@@ -1281,6 +1281,15 @@ app.get(`/${prefix}/checkConfig`, async (req, res) => {
   })
 })
 
+app.get(`/${prefix}/ip`, async (req, res) => {
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress
+    return res.status(200).send(ip)
+  } catch (err) {
+    return res.status(500).json({ message: err.message })
+  }
+})
+
 exports.parseConfig = parseConfig
 exports.refreshCreds = refreshCreds
 exports.checkCloudflare = checkCloudflare

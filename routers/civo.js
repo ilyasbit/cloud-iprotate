@@ -13,6 +13,10 @@ const { SocksProxyAgent } = require('socks-proxy-agent')
 const fromMain = require('../index.js')
 const { ConversionTaskFilterSensitiveLog } = require('@aws-sdk/client-ec2')
 
+config.read('config.conf')
+const prefix = config.get('api', 'prefix')
+const appPort = config.get('api', 'port')
+
 async function newIpCivo(serverConfig) {
   async function getReservedIp(serverConfig) {
     const cookie = serverConfig.cookie
@@ -685,7 +689,7 @@ router.get('/newip', async function (req, res, next) {
         const agent = new SocksProxyAgent(socks5Url)
         console.log(`try to connect using ${socks5Url}`)
         const response = await axios.request({
-          url: 'http://fake.chiacloud.farm/ip',
+          url: `http://${hostPublicIp}:${appPort}/${prefix}/ip`,
           method: 'GET',
           httpsAgent: agent,
           httpAgent: agent,
