@@ -1128,7 +1128,7 @@ app.get(`/${prefix}/newip/`, async (req, res) => {
         const agent = new SocksProxyAgent(socks5Url)
         console.log(`try to connect using ${socks5Url}`)
         const response = await axios.request({
-          url: 'http://fake.chiacloud.farm/ip',
+          url: `http://${hostPublicIp}:${appPort}/${prefix}/ip`,
           method: 'GET',
           httpsAgent: agent,
           httpAgent: agent,
