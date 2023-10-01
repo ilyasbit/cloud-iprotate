@@ -344,7 +344,7 @@ async function newIpAzure(serverConfig) {
       if (retries < max) {
         continue
       } else {
-        throw new Error('Failed to get new I, max retries reached')
+        throw new Error('Failed to get new IP, max retries reached')
       }
     } else {
       break
