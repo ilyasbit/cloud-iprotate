@@ -441,35 +441,59 @@ async function parseConfig() {
   let civoConfigList = []
   let azureConfigList = []
   let awsConfigList = []
-  let biznetConfigList = []
   let cloudflareConfig = {}
   let apiConfig = {}
+  apiConfig.apiHostName = config.get('api', 'apiHostName')
+  apiConfig.prefix = config.get('api', 'prefix')
+  apiConfig.port = config.get('api', 'port')
+  apiConfig.hostLocalIp = config.get('api', 'hostLocalIp')
+  apiConfig.hostPublicIp = config.get('api', 'hostPublicIp')
+  apiConfig.apiHostName = config.get('api', 'apiHostName')
+
   for (let i = 0; i < confList.length; i++) {
     const configName = confList[i]
     const configType = config.get(confList[i], 'type')
-    if (configType == 'tencent') {
+    const socks5Port = config.get(confList[i], 'socks5Port')
+    const httpPort = config.get(confList[i], 'httpPort')
+    const socks5User = config.get(confList[i], 'socks5User')
+    const socks5Pass = config.get(confList[i], 'socks5Pass')
+    let configration = {}
+    configuration.configName = confList[i]
+    configuration.socks5Port = socks5Port
+    configuration.httpPort = httpPort
+    const changeIpUrl = new URL(`http://${apiConfig.apiHostName}`)
+    changeIpUrl.port = apiConfig.port
+
+    if (configType == 'civo') {
+      changeIpUrl.pathname = `${apiConfig.prefix}/civo/newip`
+    } else {
+      changeIpUrl.pathname = `${apiConfig.prefix}/newip`
+    }
+
+    changeIpUrl.searchParams.append('configName', configName)
+    configuration.changeIpUrl = changeIpUrl
+    if ((configType != 'api') | (configType != 'cloudflare')) {
+      if (socks5User && socks5Pass) {
+        configration.socks5User = socks5User
+        configration.socks5Pass = socks5Pass
+      }
+    }
+    if (configType == 'api') {
+      continue
+    } else if (configType == 'tencent') {
       const secretId = config.get(confList[i], 'secretId')
       const secretKey = config.get(confList[i], 'secretKey')
       const region = config.get(confList[i], 'region')
       const instanceId = config.get(confList[i], 'instanceId')
-      const socks5Port = config.get(confList[i], 'socks5Port')
-      const httpPort = config.get(confList[i], 'httpPort')
-      const socks5User = config.get(confList[i], 'socks5User')
-      const socks5Pass = config.get(confList[i], 'socks5Pass')
-
-      const configration = {
+      configration = {
+        ...configration,
         configName: configName,
         secretId: secretId,
         secretKey: secretKey,
         region: region,
         instanceId: instanceId,
-        socks5Port: socks5Port,
-        httpPort: httpPort,
       }
-      if (socks5User && socks5Pass) {
-        configration.socks5User = socks5User
-        configration.socks5Pass = socks5Pass
-      }
+
       tencentConfigList.push(configration)
     } else if (configType == 'cloudflare') {
       const email = config.get(confList[i], 'email')
@@ -484,22 +508,7 @@ async function parseConfig() {
       if (zoneId) {
         cloudflareConfig.zoneId = zoneId
       }
-    } else if (configType == 'api') {
-      const prefix = config.get(confList[i], 'prefix')
-      const port = config.get(confList[i], 'port')
-      const hostLocalIp = config.get(confList[i], 'hostLocalIp')
-      const hostPublicIp = config.get(confList[i], 'hostPublicIp')
-      const key = config.get(confList[i], 'key')
-      const apiHostName = config.get(confList[i], 'apiHostName')
-      apiConfig.prefix = prefix
-      apiConfig.port = port
-      apiConfig.hostLocalIp = hostLocalIp
-      apiConfig.hostPublicIp = hostPublicIp
-      apiConfig.key = key
-      apiConfig.apiHostName = apiHostName
     } else if (configType == 'azure') {
-      const socks5Port = config.get(confList[i], 'socks5Port')
-      const httpPort = config.get(confList[i], 'httpPort')
       const clientId = config.get(confList[i], 'clientId')
       const clientSecret = config.get(confList[i], 'clientSecret')
       const tenantId = config.get(confList[i], 'tenantId')
@@ -509,12 +518,8 @@ async function parseConfig() {
       const ipConfigName = config.get(confList[i], 'ipConfigName')
       const nicName = config.get(confList[i], 'nicName')
       const vmName = config.get(confList[i], 'vmName')
-      const socks5User = config.get(confList[i], 'socks5User')
-      const socks5Pass = config.get(confList[i], 'socks5Pass')
-      const configuration = {
-        configName: confList[i],
-        socks5Port: socks5Port,
-        httpPort: httpPort,
+      configuration = {
+        ...configuration,
         clientId: clientId,
         clientSecret: clientSecret,
         tenantId: tenantId,
@@ -525,10 +530,6 @@ async function parseConfig() {
         nicName: nicName,
         vmName: vmName,
       }
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User
-        configuration.socks5Pass = socks5Pass
-      }
       azureConfigList.push(configuration)
     } else if (configType == 'aws') {
       const accessKey = config.get(confList[i], 'accessKey')
@@ -537,9 +538,8 @@ async function parseConfig() {
       const region = config.get(confList[i], 'region')
       const socks5Port = config.get(confList[i], 'socks5Port')
       const httpPort = config.get(confList[i], 'httpPort')
-      const socks5User = config.get(confList[i], 'socks5User')
-      const socks5Pass = config.get(confList[i], 'socks5Pass')
-      const configuration = {
+      configuration = {
+        ...configuration,
         configName: confList[i],
         accessKey: accessKey,
         secretKey: secretKey,
@@ -548,57 +548,20 @@ async function parseConfig() {
         socks5Port: socks5Port,
         httpPort: httpPort,
       }
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User
-        configuration.socks5Pass = socks5Pass
-      }
       awsConfigList.push(configuration)
     } else if (configType == 'civo') {
       const token = config.get(confList[i], 'token')
       const cookie = config.get(confList[i], 'cookie')
       const instanceId = config.get(confList[i], 'instanceId')
-      const socks5Port = config.get(confList[i], 'socks5Port')
-      const httpPort = config.get(confList[i], 'httpPort')
-      const socks5User = config.get(confList[i], 'socks5User')
-      const socks5Pass = config.get(confList[i], 'socks5Pass')
       const region = config.get(confList[i], 'region')
-      const configuration = {
-        configName: confList[i],
+      configuration = {
+        ...configuration,
         token: token,
         cookie: cookie,
         region: region,
         instanceId: instanceId,
-        socks5Port: socks5Port,
-        httpPort: httpPort,
-      }
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User
-        configuration.socks5Pass = socks5Pass
       }
       civoConfigList.push(configuration)
-    } else if (configType == 'biznet') {
-      const token = config.get(confList[i], 'token')
-      const projectId = config.get(confList[i], 'projectId')
-      const networkId = config.get(confList[i], 'networkId')
-      const portId = config.get(confList[i], 'portId')
-      const region = config.get(confList[i], 'region')
-      const socks5Port = config.get(confList[i], 'socks5Port')
-      const httpPort = config.get(confList[i], 'httpPort')
-      const configuration = {
-        configName: confList[i],
-        token: token,
-        projectId: projectId,
-        networkId: networkId,
-        portId: portId,
-        region: region,
-        socks5Port: socks5Port,
-        httpPort: httpPort,
-      }
-      if (socks5User && socks5Pass) {
-        configuration.socks5User = socks5User
-        configuration.socks5Pass = socks5Pass
-      }
-      biznetConfigList.push(configuration)
     }
   }
   return {
@@ -617,6 +580,7 @@ async function checkCivo(serverConfig) {
   const cookie = serverConfig.cookie
   const instanceId = serverConfig.instanceId
   const socks5Port = serverConfig.socks5Port
+  const changeIpUrl = serverConfig.changeIpUrl
 
   const configName = serverConfig.configName
   async function getPublicIp(configName, cookie, instanceId) {
@@ -644,6 +608,8 @@ async function checkCivo(serverConfig) {
       },
     }
     const result = {}
+    result.configName = configName
+    result.changeIpUrl = changeIpUrl
     try {
       const response = await axios.get(url, axiosConfig)
       const body = response.data
@@ -669,7 +635,6 @@ async function checkCivo(serverConfig) {
 
       if (ip) {
         result.success = true
-        result.configName = configName
         result.ip = ip
         result.socks5Port = socks5Port
       }
@@ -722,6 +687,7 @@ async function checkTencent(serverConfig) {
   const region = serverConfig.region
   const instanceId = serverConfig.instanceId
   const configName = serverConfig.configName
+  const changeIpUrl = serverConfig.changeIpUrl
   const clientConfig = {
     credential: {
       secretId: secretId,
@@ -739,7 +705,8 @@ async function checkTencent(serverConfig) {
     InstanceIds: [instanceId],
   }
   let result = {}
-  result.configName = serverConfig.configName
+  result.configName = configName
+  result.changeIpUrl = changeIpUrl
   try {
     let instanceDescribed = await client.DescribeInstances(params)
     let oldIp = ''
@@ -764,6 +731,7 @@ async function checkAws(serverConfig) {
   const instanceId = serverConfig.instanceId
   const region = serverConfig.region
   const configName = serverConfig.configName
+  const changeIpUrl = serverConfig.changeIpUrl
   const ec2 = new EC2Client({
     region: region,
     credentials: {
@@ -773,6 +741,7 @@ async function checkAws(serverConfig) {
   })
   let result = {}
   result.configName = configName
+  result.changeIpUrl = changeIpUrl
   try {
     async function getInstanceIp() {
       try {
@@ -805,6 +774,8 @@ async function checkAzure(serverConfig) {
   const resourceGroupName = serverConfig.resourceGroupName
   const publicIpName = serverConfig.publicIpName
   const nicName = serverConfig.nicName
+  const configName = serverConfig.configName
+  const changeIpUrl = serverConfig.changeIpUrl
 
   const credential = new DefaultAzureCredential({
     clientId: AZURE_CLIENT_ID,
@@ -812,7 +783,8 @@ async function checkAzure(serverConfig) {
     tenantId: AZURE_TENANT_ID,
   })
   let result = {}
-  result.configName = serverConfig.configName
+  result.configName = configName
+  result.changeIpUrl = changeIpUrl
   try {
     const networkClient = new NetworkManagementClient(
       credential,
