@@ -53,3 +53,25 @@ accessKey = xxxxxxxxx
 secretKey = xxxxxxxxxxx
 instanceId = i-xxxxxxxxxxxx
 region = us-east-1
+
+[aws10]
+type = creds
+cloud = aws
+secretKey = xxxxxxxxxxx
+instanceId = i-xxxxxxxxxxxx
+
+[server1]
+creds = aws10
+instanceId = i-xxxxxxxxxxxx
+region = us-east-1
+
+[server51]
+creds = azure
+
+[proxy1]
+remote = server1 server2 server3 server51
+ttl = 60
+current = server1
+socks5Port = xxx
+
+
